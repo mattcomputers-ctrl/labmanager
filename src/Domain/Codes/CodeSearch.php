@@ -50,6 +50,11 @@ final class CodeSearch
                 $p = CodeFormat::parseSell($c);
                 if ($p !== null && !in_array($p['normalized'], $out['sells'], true)) {
                     $out['sells'][] = $p['normalized'];
+                    // Historical spellings (UVV for UVVL) search the real prefix too.
+                    $canon = CodeFormat::canonicalPrefix($p['prefix']);
+                    if ($canon !== $p['prefix']) {
+                        $out['sells'][] = $canon . $p['number'] . $p['suffix'];
+                    }
                 }
             }
         }
@@ -252,6 +257,10 @@ final class CodeSearch
         foreach ($parsed['sells'] as $norm) {
             $add($sellSelect, 0, 's.sell_number_normalized = ?', [$norm]);
             $add($sellSelect, 1, 's.sell_number_normalized LIKE ?', [$norm . '%']);
+        }
+        if ($parsed['sells'] !== [] && $parsed['legacy'] !== null) {
+            // The spelling as it appeared on the old sheets (legacy_text is indexed).
+            $add($sellSelect, 0, 's.legacy_text = ?', [$parsed['legacy']]);
         }
         if ($parsed['internal'] !== null) {
             $n = $parsed['internal']['number'];

@@ -172,9 +172,10 @@ final class App
             $user = $this->auth->user();
             if ($user && (int) ($user['must_change_password'] ?? 0) === 1
                 && !in_array($request->path, ['/account/password', '/logout', '/mode'], true)) {
-                if (!$request->wantsJson()) {
-                    return Response::redirect('/account/password?first=1');
+                if ($request->wantsJson()) {
+                    return Response::json(['error' => 'Please choose your own password before doing anything else.', 'redirect' => '/account/password?first=1'], 403);
                 }
+                return Response::redirect('/account/password?first=1');
             }
 
             if ($route->csrf && !in_array($request->method, ['GET', 'HEAD', 'OPTIONS'], true) && !$this->csrf->check($request)) {

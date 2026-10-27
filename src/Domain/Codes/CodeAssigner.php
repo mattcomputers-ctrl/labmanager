@@ -264,6 +264,7 @@ final class CodeAssigner
     /** Point a sell number at an E number (or clear the link with null). A sell number has at most one E#. */
     public function linkSellToInternal(int $sellId, ?int $internalId, ?int $actorId): void
     {
+        $internalId = ($internalId !== null && $internalId > 0) ? $internalId : null;
         $this->db->transaction(function (Db $db) use ($sellId, $internalId, $actorId) {
             $before = $db->one('SELECT * FROM chroma_sell_numbers WHERE id = ? FOR UPDATE', [$sellId]);
             if ($before === null) {
@@ -298,6 +299,9 @@ final class CodeAssigner
             if ($next < 1) {
                 throw ValidationException::single('next_number', 'Enter a number of 1 or more.');
             }
+            if ($next > CodeFormat::MAX_NUMBER) {
+                throw ValidationException::single('next_number', 'That number is too big. Sell numbers have at most ' . strlen((string) CodeFormat::MAX_NUMBER) . ' digits.');
+            }
             if ($next <= $max) {
                 throw ValidationException::single('next_number', sprintf(
                     'The highest %s number already used is %s, so the next number must be at least %d. Numbers are never reused.',
@@ -325,6 +329,9 @@ final class CodeAssigner
             }
             if ($next < 1) {
                 throw ValidationException::single('next_value', 'Enter a number of 1 or more.');
+            }
+            if ($next > CodeFormat::MAX_NUMBER) {
+                throw ValidationException::single('next_value', 'That number is too big. E numbers have at most ' . strlen((string) CodeFormat::MAX_NUMBER) . ' digits.');
             }
             if ($next === $current) {
                 return;
@@ -420,12 +427,12 @@ final class CodeAssigner
             'vendor_code' => self::nullable($data['vendor_code'] ?? null, 100),
             'legacy_handschy_number' => self::nullable($data['legacy_handschy_number'] ?? null, 100),
             'legacy_internal_code' => self::nullable($data['legacy_internal_code'] ?? null, 100),
-            'date_assigned' => array_key_exists('date_assigned', $data) ? $data['date_assigned'] : gmdate('Y-m-d'),
+            'date_assigned' => array_key_exists('date_assigned', $data) ? $data['date_assigned'] : self::localToday(),
             'assigned_by' => $actorId,
             'original_customer_id' => isset($data['original_customer_id']) && (int) $data['original_customer_id'] > 0 ? (int) $data['original_customer_id'] : null,
             'voided' => 0,
             'source' => $source,
-            'notes' => self::nullable($data['notes'] ?? null, 65000),
+            'notes' => self::notes($data['notes'] ?? null),
             'created_at' => $now,
             'updated_at' => $now,
         ]);
@@ -450,13 +457,13 @@ final class CodeAssigner
             'internal_code_id' => isset($data['internal_code_id']) && (int) $data['internal_code_id'] > 0 ? (int) $data['internal_code_id'] : null,
             'legacy_internal_code' => self::nullable($data['legacy_internal_code'] ?? null, 100),
             'original_customer_id' => isset($data['original_customer_id']) && (int) $data['original_customer_id'] > 0 ? (int) $data['original_customer_id'] : null,
-            'date_assigned' => array_key_exists('date_assigned', $data) ? $data['date_assigned'] : gmdate('Y-m-d'),
+            'date_assigned' => array_key_exists('date_assigned', $data) ? $data['date_assigned'] : self::localToday(),
             'assigned_by' => $actorId,
             'reason' => self::nullable($data['reason'] ?? null, 40),
             'reason_text' => self::nullable($data['reason_text'] ?? null, 500),
             'voided' => 0,
             'source' => $source,
-            'notes' => self::nullable($data['notes'] ?? null, 65000),
+            'notes' => self::notes($data['notes'] ?? null),
             'created_at' => $now,
             'updated_at' => $now,
         ]);
@@ -480,9 +487,23 @@ final class CodeAssigner
         if ($itemId === null || (int) $itemId <= 0) {
             return;
         }
-        $item = $db->one('SELECT id, project_id FROM chroma_project_items WHERE id = ? FOR UPDATE', [(int) $itemId]);
+        $item = $db->one('SELECT id, project_id, internal_code_id, sell_number_id FROM chroma_project_items WHERE id = ? FOR UPDATE', [(int) $itemId]);
         if ($item === null) {
             throw ValidationException::general('That color or item no longer exists, so the code was not assigned.');
+        }
+        $existingId = (int) ($item[$column] ?? 0);
+        if ($existingId > 0 && $existingId !== $codeId) {
+            $existing = $column === 'internal_code_id'
+                ? $db->one('SELECT number, version, voided FROM chroma_internal_codes WHERE id = ?', [$existingId])
+                : $db->one('SELECT s.number, s.voided, p.code AS prefix_code, p.min_digits, x.code AS suffix_code FROM chroma_sell_numbers s JOIN chroma_code_prefixes p ON p.id = s.prefix_id LEFT JOIN chroma_code_suffixes x ON x.id = s.suffix_id WHERE s.id = ?', [$existingId]);
+            if ($existing && (int) $existing['voided'] === 0) {
+                $disp = $column === 'internal_code_id'
+                    ? CodeFormat::internal((int) $existing['number'], $existing['version'])
+                    : CodeFormat::sell($existing['prefix_code'], (int) $existing['number'], (int) $existing['min_digits'], $existing['suffix_code']);
+                // Roll back the whole assignment: no number is consumed.
+                throw ValidationException::general(sprintf('This %s already has %s %s. If that was a mistake, void it first; otherwise add another %s.',
+                    $column === 'internal_code_id' ? 'item' : 'item', $column === 'internal_code_id' ? 'E number' : 'sell number', $disp, 'item'));
+            }
         }
         $db->update('chroma_project_items', [$column => $codeId, 'updated_at' => $db->now()], ['id' => (int) $item['id']]);
         $db->insert('chroma_project_activity', [
@@ -494,6 +515,27 @@ final class CodeAssigner
             'meta_json' => json_encode([$column => $codeId]),
             'created_at' => $db->now(),
         ]);
+    }
+
+    /** Today's date in the display timezone (codes are dated by the lab's calendar, not UTC). */
+    public static function localToday(): string
+    {
+        try {
+            $tz = \Chroma\Core\App::get()->timezone();
+        } catch (\LogicException) {
+            $tz = new \DateTimeZone('America/Chicago');
+        }
+        return (new \DateTimeImmutable('now', $tz))->format('Y-m-d');
+    }
+
+    /** Notes columns are TEXT (65,535 bytes): cap by bytes on a character boundary. */
+    private static function notes(mixed $v): ?string
+    {
+        if ($v === null) {
+            return null;
+        }
+        $s = trim((string) $v);
+        return $s === '' ? null : mb_strcut($s, 0, 65535);
     }
 
     private static function nullable(mixed $v, int $max): ?string

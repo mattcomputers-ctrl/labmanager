@@ -35,7 +35,7 @@ final class HomeController extends Controller
         $data['stats'] = [
             'open' => (int) $this->db->value('SELECT COUNT(*) FROM chroma_projects WHERE status = "open"'),
             'mine' => (int) $this->db->value('SELECT COUNT(*) FROM chroma_projects WHERE status = "open" AND assigned_user_id = ?', [$uid]),
-            'codes_month' => (int) $this->db->value('SELECT COUNT(*) FROM chroma_sell_numbers WHERE date_assigned >= DATE_FORMAT(UTC_DATE(), "%Y-%m-01")'),
+            'codes_month' => (int) $this->db->value('SELECT COUNT(*) FROM chroma_sell_numbers WHERE date_assigned >= ?', [substr(today(), 0, 7) . '-01']),
             'overdue' => (int) $this->db->value('SELECT COUNT(*) FROM chroma_project_tasks WHERE done = 0 AND due_date < UTC_DATE() AND owner_user_id = ?', [$uid]),
         ];
         return $this->view('home/index', $data);

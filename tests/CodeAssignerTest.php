@@ -191,6 +191,45 @@ final class CodeAssignerTest extends TestCase
         $this->assertSame(1, (int) $this->db->value('SELECT COUNT(*) FROM chroma_project_activity WHERE project_id = ? AND kind = "code_assigned"', [$pid]));
     }
 
+    public function testAnItemCannotReceiveASecondLiveCodeAndNoNumberIsBurned(): void
+    {
+        $now = $this->db->now();
+        $typeId = (int) $this->db->value("SELECT id FROM chroma_project_types WHERE code = 'color_match'");
+        $pid = $this->db->insert('chroma_projects', ['project_number' => 102, 'project_type_id' => $typeId, 'title' => 'Test', 'status' => 'open', 'created_at' => $now, 'updated_at' => $now]);
+        $iid = $this->db->insert('chroma_project_items', ['project_id' => $pid, 'sequence' => 1, 'kind' => 'color', 'description' => 'Pantone 109', 'created_at' => $now, 'updated_at' => $now]);
+        $y = $this->prefixId('Y');
+        $first = $this->codes->assignSell(['prefix_id' => $y, 'description' => 'Pantone 109', 'project_item_id' => $iid], $this->adminId);
+        try {
+            $this->codes->assignSell(['prefix_id' => $y, 'description' => 'again', 'project_item_id' => $iid], $this->adminId);
+            $this->fail('expected refusal');
+        } catch (ValidationException $e) {
+            $this->assertStringContainsString($first['display'], $e->getMessage());
+        }
+        // The refused assignment rolled back: no second row, counter unchanged, item still points at the first code.
+        $this->assertSame(1, (int) $this->db->value('SELECT COUNT(*) FROM chroma_sell_numbers WHERE prefix_id = ?', [$y]));
+        $this->assertSame((int) $first['number'] + 1, $this->codes->previewSell($y));
+        $this->assertSame((int) $first['id'], (int) $this->db->value('SELECT sell_number_id FROM chroma_project_items WHERE id = ?', [$iid]));
+        // After voiding the first code a new one may be assigned to the item.
+        $this->codes->voidSell((int) $first['id'], 'wrong prefix', $this->adminId);
+        $second = $this->codes->assignSell(['prefix_id' => $y, 'description' => 'Pantone 109', 'project_item_id' => $iid], $this->adminId);
+        $this->assertSame((int) $second['id'], (int) $this->db->value('SELECT sell_number_id FROM chroma_project_items WHERE id = ?', [$iid]));
+    }
+
+    public function testLinkWithZeroClearsTheLinkInsteadOfFailing(): void
+    {
+        $e = $this->codes->assignInternal(['description' => 'formula'], $this->adminId);
+        $s = $this->codes->assignSell(['prefix_id' => $this->prefixId('R'), 'description' => 'red', 'internal_code_id' => $e['id']], $this->adminId);
+        $this->codes->linkSellToInternal((int) $s['id'], 0, $this->adminId);
+        $this->assertNull($this->db->value('SELECT internal_code_id FROM chroma_sell_numbers WHERE id = ?', [$s['id']]));
+    }
+
+    public function testCountersRefuseAbsurdValues(): void
+    {
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessageMatches('/too big/');
+        $this->codes->setInternalNext(5000000000, $this->adminId);
+    }
+
     /**
      * Real concurrency: fork N processes that each open their own connection
      * and assign K sell numbers under the same prefix at the same time.
@@ -202,6 +241,8 @@ final class CodeAssignerTest extends TestCase
             $this->markTestSkipped('pcntl not available');
         }
         $prefixId = $this->prefixId('B');
+        $uvId = $this->suffixId('UV');
+        $adminId = $this->adminId;
         $procs = 8;
         $each = 15;
         $pids = [];
@@ -217,7 +258,7 @@ final class CodeAssignerTest extends TestCase
                 $ok = 0;
                 for ($i = 0; $i < $each; $i++) {
                     try {
-                        $codes->assignSell(['prefix_id' => $prefixId, 'description' => "proc $p item $i", 'suffix_id' => $i % 2 ? $this->suffixId('UV') : null], $this->adminId);
+                        $codes->assignSell(['prefix_id' => $prefixId, 'description' => "proc $p item $i", 'suffix_id' => $i % 2 ? $uvId : null], $adminId);
                         $ok++;
                     } catch (\Throwable $e) {
                         fwrite(STDERR, "child $p: " . $e->getMessage() . "\n");
@@ -253,6 +294,7 @@ final class CodeAssignerTest extends TestCase
         }
         $procs = 6;
         $each = 10;
+        $adminId = $this->adminId;
         $pids = [];
         for ($p = 0; $p < $procs; $p++) {
             $pid = pcntl_fork();
@@ -262,7 +304,7 @@ final class CodeAssignerTest extends TestCase
                 $ok = 0;
                 for ($i = 0; $i < $each; $i++) {
                     try {
-                        $codes->assignInternal(['description' => "proc $p item $i"], $this->adminId);
+                        $codes->assignInternal(['description' => "proc $p item $i"], $adminId);
                         $ok++;
                     } catch (\Throwable $e) {
                         fwrite(STDERR, "child $p: " . $e->getMessage() . "\n");

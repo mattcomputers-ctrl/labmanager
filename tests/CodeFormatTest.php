@@ -59,6 +59,21 @@ final class CodeFormatTest extends TestCase
         $this->assertSame('UVNG172', CodeFormat::sell('UVNG', 172, 2));
     }
 
+    public function testFulltextQueryLeavesOutWordsInnoDbDoesNotIndex(): void
+    {
+        $bq = \Chroma\Http\Controllers\Api\LookupApiController::class;
+        $this->assertSame('+Purple*', $bq::booleanQuery('Purple UV'));
+        $this->assertSame('+blister* +pantone*', $bq::booleanQuery('blister for the pantone'));
+        $this->assertSame('', $bq::booleanQuery('uv for'));
+        $this->assertSame('+varnish* +gloss* +quoted*', $bq::booleanQuery('varnish (gloss) "quoted" + - <>'));
+    }
+
+    public function testCanonicalPrefixMapsHistoricalSpelling(): void
+    {
+        $this->assertSame('UVVL', CodeFormat::canonicalPrefix('uvv'));
+        $this->assertSame('Y', CodeFormat::canonicalPrefix('Y'));
+    }
+
     public function testInternal(): void
     {
         $this->assertSame(['number' => 6374, 'version' => '10'], CodeFormat::parseInternal('E6374-10'));

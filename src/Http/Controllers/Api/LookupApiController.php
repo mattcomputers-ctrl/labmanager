@@ -41,6 +41,10 @@ final class LookupApiController extends Controller
         $i = CodeFormat::parseInternal($q);
         if ($i !== null) {
             [$cond, $params] = self::numberPrefixCondition('number', $i['number']);
+            if ($i['version'] !== '') {
+                $cond .= ' AND version LIKE ?';
+                $params[] = $i['version'] . '%';
+            }
             $rows = $this->db->all(
                 'SELECT id, number, version, description, voided FROM chroma_internal_codes WHERE ' . $cond . ' ORDER BY number, version LIMIT ' . $limit,
                 $params
@@ -54,8 +58,8 @@ final class LookupApiController extends Controller
             $rows = $this->db->all(
                 'SELECT s.id, s.number, s.description, s.voided, s.internal_code_id, p.code AS prefix_code, p.min_digits, x.code AS suffix_code, i.number AS inum, i.version AS iver
                  FROM chroma_sell_numbers s JOIN chroma_code_prefixes p ON p.id = s.prefix_id LEFT JOIN chroma_code_suffixes x ON x.id = s.suffix_id LEFT JOIN chroma_internal_codes i ON i.id = s.internal_code_id
-                 WHERE s.sell_number_normalized LIKE ? ORDER BY s.number LIMIT ' . $limit,
-                [$s['prefix'] . $s['number'] . '%']
+                 WHERE s.sell_number_normalized LIKE ? OR s.sell_number_normalized LIKE ? OR s.legacy_text = ? ORDER BY s.number LIMIT ' . $limit,
+                [$s['prefix'] . $s['number'] . '%', CodeFormat::canonicalPrefix($s['prefix']) . $s['number'] . '%', trim($q)]
             );
             foreach ($rows as $r) {
                 $disp = CodeFormat::sell($r['prefix_code'], (int) $r['number'], (int) $r['min_digits'], $r['suffix_code']);
@@ -63,7 +67,7 @@ final class LookupApiController extends Controller
                     'label' => $disp . ($r['voided'] ? ' (voided)' : '') . ($r['inum'] ? ' · ' . CodeFormat::internal((int) $r['inum'], $r['iver']) : ''), 'sub' => $r['description']];
             }
         }
-        if (count($results) < 5 && mb_strlen($q) >= 3) {
+        if (count($results) < 5 && mb_strlen($q) >= 3 && self::booleanQuery($q) !== '') {
             $like = $q . '%';
             $rows = $this->db->all(
                 'SELECT s.id, s.number, s.description, s.voided, s.internal_code_id, p.code AS prefix_code, p.min_digits, x.code AS suffix_code
@@ -105,13 +109,23 @@ final class LookupApiController extends Controller
         return ['(' . implode(' OR ', $parts) . ')', $params];
     }
 
-    /** Turn free text into a safe boolean-mode fulltext query: every word required, prefix-matched. */
+    /** InnoDB's default stopword list; a required stopword can never match. */
+    public const FT_STOPWORDS = ['a', 'about', 'an', 'are', 'as', 'at', 'be', 'by', 'com', 'de', 'en', 'for', 'from', 'how', 'i', 'in', 'is', 'it', 'la', 'of', 'on', 'or', 'that', 'the', 'this', 'to', 'was', 'what', 'when', 'where', 'who', 'will', 'with', 'und', 'www'];
+    /** innodb_ft_min_token_size default: shorter words are not in the index at all. */
+    public const FT_MIN_TOKEN = 3;
+
+    /**
+     * Turn free text into a safe boolean-mode fulltext query. Words that are
+     * in the index are required (+word*); words InnoDB does not index (shorter
+     * than 3 characters such as "UV", or stopwords such as "for") are left out,
+     * because requiring them would return nothing.
+     */
     public static function booleanQuery(string $q): string
     {
         $words = preg_split('/[^\p{L}\p{N}]+/u', $q, -1, PREG_SPLIT_NO_EMPTY) ?: [];
         $parts = [];
         foreach ($words as $w) {
-            if (mb_strlen($w) < 2) {
+            if (mb_strlen($w) < self::FT_MIN_TOKEN || in_array(mb_strtolower($w), self::FT_STOPWORDS, true)) {
                 continue;
             }
             $parts[] = '+' . $w . '*';

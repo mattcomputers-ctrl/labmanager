@@ -27,12 +27,13 @@ WORK=$(mktemp -d); trap 'rm -rf "$WORK"' EXIT
 JAR="$WORK/cookies"
 
 # 1. Sign in (fetch CSRF token from the login page, then post credentials).
-TOKEN=$(curl -sS -c "$JAR" -b "$JAR" "$URL/login" | grep -o 'name="_token" value="[^"]*"' | head -1 | sed 's/.*value="//;s/"$//')
+TOKEN=$( (curl -sS -c "$JAR" -b "$JAR" "$URL/login" || true) | grep -o 'name="_token" value="[^"]*"' | head -1 | sed 's/.*value="//;s/"$//' || true)
 [[ -n "$TOKEN" ]] || { echo "Could not read the sign-in page at $URL/login" >&2; exit 1; }
-CODE=$(curl -sS -o /dev/null -w '%{http_code}' -c "$JAR" -b "$JAR" --data-urlencode "_token=$TOKEN" --data-urlencode "username=$USER_" --data-urlencode "password=$PASS" "$URL/login")
-[[ "$CODE" == "303" || "$CODE" == "302" ]] || { echo "Sign-in failed (HTTP $CODE)" >&2; exit 1; }
+TARGET=$(curl -sS -o /dev/null -w '%{redirect_url}' -c "$JAR" -b "$JAR" --data-urlencode "_token=$TOKEN" --data-urlencode "username=$USER_" --data-urlencode "password=$PASS" "$URL/login" || true)
+case "$TARGET" in *"/login"*|"") echo "Sign-in failed: check the username and password (and that $URL is Chroma)." >&2; exit 1;; esac
 # Refresh token (session was regenerated on login)
-TOKEN=$(curl -sS -c "$JAR" -b "$JAR" "$URL/" | grep -o 'name="csrf-token" content="[^"]*"' | head -1 | sed 's/.*content="//;s/"$//')
+TOKEN=$( (curl -sS -c "$JAR" -b "$JAR" "$URL/" || true) | grep -o 'name="csrf-token" content="[^"]*"' | head -1 | sed 's/.*content="//;s/"$//' || true)
+[[ -n "$TOKEN" ]] || { echo "Signed in but could not read the home page (does this account have access?)" >&2; exit 1; }
 
 # 2. Find the prefix id.
 if [[ "$MODE" == "sell" ]]; then
@@ -61,9 +62,10 @@ cat "$WORK"/resp.* | grep -o '"code": *"[^"]*"' | sed 's/.*: *"//;s/"$//' | sort
 TOTAL=$(wc -l < "$WORK/codes"); DISTINCT=$(sort -u "$WORK/codes" | wc -l)
 DUPS=$(uniq -d "$WORK/codes" | tr '\n' ' ')
 
-printf "Succeeded: %d   Failed: %d   Elapsed: %.2fs\n" "$OK" "$FAIL" "$(echo "$END - $START" | bc)"
+printf "Succeeded: %d   Failed: %d   Elapsed: %ss\n" "$OK" "$FAIL" "$(awk "BEGIN{printf \"%.2f\", $END - $START}")"
 printf "Codes received: %d   Distinct: %d\n" "$TOTAL" "$DISTINCT"
 if [[ "$FAIL" -gt 0 ]]; then echo "Some requests failed. First failure body:"; for f in "$WORK"/status.*; do if [[ "$(cat "$f")" != "200" ]]; then cat "${f/status/resp}"; echo; break; fi; done; fi
 if [[ -n "$DUPS" ]]; then echo "DUPLICATE CODES: $DUPS"; exit 1; fi
 if [[ "$TOTAL" -ne "$OK" ]]; then echo "Mismatch between successful requests and codes received."; exit 1; fi
 echo "No duplicates. First: $(head -1 "$WORK/codes")  Last: $(tail -1 "$WORK/codes")"
+if [[ "$FAIL" -gt 0 ]]; then echo "FAILED: $FAIL request(s) did not succeed."; exit 1; fi

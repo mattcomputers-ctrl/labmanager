@@ -15,6 +15,18 @@ final class CodeFormat
     /** Largest number a code may carry (9 digits; the columns are INT UNSIGNED). */
     public const MAX_NUMBER = 999999999;
 
+    /**
+     * Historical spellings of a prefix that map to the real prefix (SPEC §2.2:
+     * UVV rows belong to UVVL). The parser stays literal (the importer applies
+     * the mapping itself, with a switch); searches use canonicalPrefix().
+     */
+    public const PREFIX_ALIASES = ['UVV' => 'UVVL'];
+
+    public static function canonicalPrefix(string $prefix): string
+    {
+        return self::PREFIX_ALIASES[strtoupper($prefix)] ?? strtoupper($prefix);
+    }
+
     /** Canonical key: uppercase, no spaces/hyphens, number without leading zeros. */
     public static function normalizeSell(string $text): ?string
     {
