@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# Hammer the sell-number assignment endpoint with parallel requests and
+# verify that no two requests received the same code.
+#
+#   bin/stress-assign --url http://127.0.0.1:8080 --user admin --pass 'secret' [--prefix T] [--n 200] [--parallel 25] [--internal]
+#
+# Requires curl, jq is NOT required. Exit status 0 = no duplicates and every request succeeded.
+set -euo pipefail
+
+URL="http://127.0.0.1:8080"; USER_=""; PASS=""; PREFIX="T"; N=200; PAR=25; MODE="sell"
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --url) URL="$2"; shift 2;;
+    --user) USER_="$2"; shift 2;;
+    --pass) PASS="$2"; shift 2;;
+    --prefix) PREFIX="$2"; shift 2;;
+    --n) N="$2"; shift 2;;
+    --parallel) PAR="$2"; shift 2;;
+    --internal) MODE="internal"; shift;;
+    -h|--help) sed -n '2,8p' "$0"; exit 0;;
+    *) echo "Unknown option $1" >&2; exit 2;;
+  esac
+done
+if [[ -z "$USER_" || -z "$PASS" ]]; then echo "Give --user and --pass of an account that may assign codes." >&2; exit 2; fi
+
+WORK=$(mktemp -d); trap 'rm -rf "$WORK"' EXIT
+JAR="$WORK/cookies"
+
+# 1. Sign in (fetch CSRF token from the login page, then post credentials).
+TOKEN=$(curl -sS -c "$JAR" -b "$JAR" "$URL/login" | grep -o 'name="_token" value="[^"]*"' | head -1 | sed 's/.*value="//;s/"$//')
+[[ -n "$TOKEN" ]] || { echo "Could not read the sign-in page at $URL/login" >&2; exit 1; }
+CODE=$(curl -sS -o /dev/null -w '%{http_code}' -c "$JAR" -b "$JAR" --data-urlencode "_token=$TOKEN" --data-urlencode "username=$USER_" --data-urlencode "password=$PASS" "$URL/login")
+[[ "$CODE" == "303" || "$CODE" == "302" ]] || { echo "Sign-in failed (HTTP $CODE)" >&2; exit 1; }
+# Refresh token (session was regenerated on login)
+TOKEN=$(curl -sS -c "$JAR" -b "$JAR" "$URL/" | grep -o 'name="csrf-token" content="[^"]*"' | head -1 | sed 's/.*content="//;s/"$//')
+
+# 2. Find the prefix id.
+if [[ "$MODE" == "sell" ]]; then
+  PREFIX_ID=$(curl -sS -b "$JAR" -H 'Accept: application/json' "$URL/api/prefixes" | php -r '$j=json_decode(stream_get_contents(STDIN),true); foreach($j["prefixes"]??[] as $p){ if($p["code"]===$argv[1]){ echo $p["id"]; } }' "$PREFIX")
+  [[ -n "$PREFIX_ID" ]] || { echo "Prefix $PREFIX not found or retired" >&2; exit 1; }
+  ENDPOINT="$URL/api/codes/assign-sell"
+  BODY_TMPL="{\"prefix_id\":$PREFIX_ID,\"description\":\"stress test REQ\"}"
+else
+  ENDPOINT="$URL/api/codes/assign-internal"
+  BODY_TMPL="{\"description\":\"stress test REQ\"}"
+fi
+
+echo "Firing $N requests, $PAR at a time, at $ENDPOINT ..."
+START=$(date +%s.%N)
+seq 1 "$N" | xargs -P "$PAR" -I{} sh -c '
+  body=$(printf "%s" "$1" | sed "s/REQ/{}/")
+  curl -sS -o "$2/resp.{}" -w "%{http_code}\n" -b "$3" -H "Content-Type: application/json" -H "Accept: application/json" -H "X-CSRF-Token: $4" -X POST --data "$body" "$5" > "$2/status.{}"
+' _ "$BODY_TMPL" "$WORK" "$JAR" "$TOKEN" "$ENDPOINT"
+END=$(date +%s.%N)
+
+OK=0; FAIL=0
+for f in "$WORK"/status.*; do
+  s=$(cat "$f"); if [[ "$s" == "200" ]]; then OK=$((OK+1)); else FAIL=$((FAIL+1)); fi
+done
+cat "$WORK"/resp.* | grep -o '"code": *"[^"]*"' | sed 's/.*: *"//;s/"$//' | sort > "$WORK/codes"
+TOTAL=$(wc -l < "$WORK/codes"); DISTINCT=$(sort -u "$WORK/codes" | wc -l)
+DUPS=$(uniq -d "$WORK/codes" | tr '\n' ' ')
+
+printf "Succeeded: %d   Failed: %d   Elapsed: %.2fs\n" "$OK" "$FAIL" "$(echo "$END - $START" | bc)"
+printf "Codes received: %d   Distinct: %d\n" "$TOTAL" "$DISTINCT"
+if [[ "$FAIL" -gt 0 ]]; then echo "Some requests failed. First failure body:"; for f in "$WORK"/status.*; do if [[ "$(cat "$f")" != "200" ]]; then cat "${f/status/resp}"; echo; break; fi; done; fi
+if [[ -n "$DUPS" ]]; then echo "DUPLICATE CODES: $DUPS"; exit 1; fi
+if [[ "$TOTAL" -ne "$OK" ]]; then echo "Mismatch between successful requests and codes received."; exit 1; fi
+echo "No duplicates. First: $(head -1 "$WORK/codes")  Last: $(tail -1 "$WORK/codes")"

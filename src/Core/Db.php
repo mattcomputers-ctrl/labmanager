@@ -49,6 +49,13 @@ final class Db
         return $this->pdo;
     }
 
+    /** Drop the current connection; the next query reconnects. Needed after pcntl_fork. */
+    public function reconnect(): void
+    {
+        $this->pdo = null;
+        $this->txDepth = 0;
+    }
+
     /** Open a second, independent connection (used by tests and the stress tool). */
     public function fresh(): self
     {
