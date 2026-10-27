@@ -1,0 +1,40 @@
+/* Admin → Prefixes / Suffixes / Sequences (module A). Everything else comes from chroma.css. */
+
+.prefix-code { font-weight: 700; letter-spacing: .02em; }
+.prefix-retired .prefix-code { text-decoration: none; }
+.prefix-desc { max-width: 320px; }
+
+.table-toolbar .export-links { display: flex; gap: var(--s-1); margin-left: auto; }
+@media (max-width: 640px) {
+  .table-toolbar .export-links { margin-left: 0; }
+}
+
+.prefix-stats { margin-bottom: var(--s-5); }
+.prefix-stats .stat-value.code { font-size: var(--fs-2xl); }
+@media (max-width: 640px) {
+  .prefix-stats { grid-template-columns: 1fr; }
+}
+
+.prefix-edit-grid { align-items: start; }
+@media (max-width: 900px) {
+  .prefix-edit-grid { grid-template-columns: 1fr; }
+}
+
+.suffix-fieldset { border: 0; padding: 0; margin: var(--s-5) 0 0; min-width: 0; }
+.suffix-fieldset legend { padding: 0; margin-bottom: var(--s-2); }
+.suffix-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: var(--s-2) var(--s-4); }
+.suffix-list .check { margin: 0; }
+
+.seq-stats { margin-bottom: var(--s-4); }
+.seq-stats .stat { padding: var(--s-3) 0; }
+.seq-stats .stat-value.code { font-size: var(--fs-2xl); }
+
+.history-list { padding: 0 var(--s-6); }
+.history-list li { min-height: 48px; }
+@media (max-width: 640px) {
+  .history-list { padding: 0 var(--s-4); }
+}
+
+/* A suffix the prefix allows but which is switched off under Admin → Suffixes. */
+.suffix-list .check.suffix-inactive { opacity: .6; cursor: default; }
+.suffix-list .check.suffix-inactive .code { text-decoration: line-through; }
