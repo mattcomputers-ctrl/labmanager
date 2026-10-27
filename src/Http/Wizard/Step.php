@@ -17,6 +17,8 @@ final class Step
         public readonly ?string $help = null,
         public readonly ?string $template = null,
         public readonly ?string $nextLabel = null,
+        /** Label that follows a radio on this step: ['field' => 'item_1_more', 'labels' => ['yes' => 'Next: color 2 ›', 'no' => 'Review ›']]. @var array{field:string,labels:array<string,string>}|null */
+        public readonly ?array $nextLabelBy = null,
     ) {
     }
 }

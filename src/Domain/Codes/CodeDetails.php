@@ -24,7 +24,10 @@ final class CodeDetails
         'code.link' => 'Link changed',
         'code.notes' => 'Notes changed',
         'code.description' => 'Description changed',
-        'code.import' => 'Imported',
+        'code.import_internal' => 'Imported',
+        'code.import_sell' => 'Imported',
+        'import.fill_internal' => 'Filled in by the import',
+        'import.fill_sell' => 'Filled in by the import',
     ];
 
     public function __construct(private readonly Db $db, private readonly AuditLog $audit)
@@ -49,7 +52,7 @@ final class CodeDetails
         $history = $this->audit->forRow('chroma_internal_codes', $id);
         if ($sellIds !== []) {
             $linkRows = $this->db->all(
-                'SELECT * FROM chroma_audit_log WHERE table_name = ? AND row_id IN (' . implode(',', $sellIds) . ") AND action IN ('code.link', 'code.assign_sell', 'code.manual_sell', 'code.void_sell') ORDER BY id DESC LIMIT 100",
+                'SELECT * FROM chroma_audit_log WHERE table_name = ? AND row_id IN (' . implode(',', $sellIds) . ") AND action IN ('code.link', 'code.assign_sell', 'code.manual_sell', 'code.import_sell', 'code.void_sell') ORDER BY id DESC LIMIT 100",
                 ['chroma_sell_numbers']
             );
             $history = array_merge($history, $linkRows);

@@ -21,6 +21,12 @@ final class Attachments
     /** Extensions we refuse because a browser or the server could run them. */
     private const BLOCKED_EXT = ['php', 'phtml', 'phar', 'exe', 'bat', 'cmd', 'sh', 'js', 'html', 'htm', 'svg', 'msi', 'com', 'scr'];
 
+    /** Detected content we refuse whatever the file is called (the extension check above is only the first line). */
+    private const BLOCKED_MIME = ['text/html', 'application/xhtml+xml', 'image/svg+xml', 'application/x-httpd-php', 'text/x-php', 'application/x-php', 'application/javascript', 'text/javascript', 'application/ecmascript', 'text/ecmascript'];
+
+    /** Image extensions must hold an image; a "photo.jpg" that is really a web page is refused. */
+    private const IMAGE_EXT = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
+
     private Activity $activity;
 
     public function __construct(private readonly Db $db, private readonly AuditLog $audit, private readonly Settings $settings, private readonly string $filesPath)
@@ -72,6 +78,12 @@ final class Attachments
             throw ValidationException::single('file', 'Files of that type cannot be attached. Attach images, PDFs, spreadsheets or documents.');
         }
         $mime = (string) (mime_content_type($tmp) ?: 'application/octet-stream');
+        if (self::dangerousMime($mime)) {
+            throw ValidationException::single('file', 'That file holds a web page or a program, so it cannot be attached. Attach images, PDFs, spreadsheets or documents.');
+        }
+        if (in_array($ext, self::IMAGE_EXT, true) && !str_starts_with($mime, 'image/')) {
+            throw ValidationException::single('file', sprintf('That file is called .%s but it is not an image. Attach the real photo, or save the file with the right name first.', $ext));
+        }
         $dir = $this->dir($projectId);
         if (!is_dir($dir) && !mkdir($dir, 0775, true) && !is_dir($dir)) {
             throw ValidationException::general('The server could not create the folder for attachments. Tell an administrator (check FILES_PATH permissions).');
@@ -161,6 +173,17 @@ final class Attachments
             return round($bytes / 1024) . ' KB';
         }
         return $bytes . ' B';
+    }
+
+    /** Web pages, scripts and executables, by detected type rather than by name. */
+    public static function dangerousMime(string $mime): bool
+    {
+        $mime = strtolower(trim(explode(';', $mime)[0]));
+        if (in_array($mime, self::BLOCKED_MIME, true)) {
+            return true;
+        }
+        // application/x-… executables and scripts (x-sh, x-shellscript, x-perl, x-python, x-dosexec, x-executable, x-msdownload, x-elf …)
+        return (bool) preg_match('#^application/x-(httpd-|)(php|sh|shellscript|csh|perl|python|ruby|javascript|msdownload|msi|ms-installer|dosexec|executable|pie-executable|sharedlib|elf|object|mach-binary|shockwave-flash|bat|java-archive)#', $mime);
     }
 
     private static function cleanName(string $name): string

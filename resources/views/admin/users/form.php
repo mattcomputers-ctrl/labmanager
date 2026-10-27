@@ -26,7 +26,7 @@ $badge = $isNew ? '' : ($active ? component('badge', ['label' => 'Active', 'colo
 
 <div class="grid <?= $isNew ? '' : 'grid-2' ?> user-grid">
   <div class="card"><div class="card-body">
-    <form method="post" action="<?= $isNew ? '/admin/users' : '/admin/users/' . (int) $user['id'] ?>" x-data="{ mode: '<?= e(old('password_mode', 'generate')) ?>' }">
+    <form method="post" action="<?= $isNew ? '/admin/users' : '/admin/users/' . (int) $user['id'] ?>" x-data="<?= json_attr(['mode' => (string) old('password_mode', 'generate')]) ?>">
       <?= csrf_field() ?>
       <h3 class="mt-0">Details</h3>
       <div class="form-grid">

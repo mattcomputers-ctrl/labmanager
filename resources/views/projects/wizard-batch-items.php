@@ -9,7 +9,7 @@ $errors = form_errors();
 ?>
 <?php $view->start('head'); ?><link rel="stylesheet" href="/assets/css/projects.css"><?php $view->end(); ?>
 <div class="wizard">
-  <?= $view->partial('wizard/_progress', ['n' => $n, 'total' => $total, 'wizard' => $wizard]) ?>
+  <?= $view->partial('wizard/_progress', ['n' => $n, 'total' => $total, 'known' => $known ?? true, 'wizard' => $wizard]) ?>
   <form method="post" action="/wizard/<?= e($wizard->key()) ?>/step/<?= (int) $n ?>" class="card wizard-card" novalidate x-data="{ picked: <?= json_attr(array_map('strval', $picked)) ?> }">
     <?= csrf_field() ?>
     <?php if (!empty($state['_edit'])): ?><input type="hidden" name="_jump" value="review"><?php endif; ?>

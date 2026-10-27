@@ -71,6 +71,8 @@ final class QuickAssignController extends Controller
             'canSell' => $this->auth->can(Permissions::CODES_ASSIGN_SELL),
             'canInternal' => $this->auth->can(Permissions::CODES_ASSIGN_INTERNAL),
             'nextInternal' => 'E' . (new CodeAssigner($this->db, $this->app->audit))->previewInternal(),
+            // Easy must open the wizard (never this page again with expert=1); the form's live values travel via data-mode-carry.
+            'easyUrl' => url('/mode', ['set' => 'easy', 'return' => url('/wizard/quick-assign', array_filter(['product' => $request->str('product') ?: null, 'product_mode' => $request->str('product_mode') ?: null, 'want' => $request->str('want') ?: null, 'prefix_id' => $request->int('prefix_id'), 'description' => $request->str('description') ?: null, 'reason' => $request->str('reason') ?: null, 'jump' => 1]))]),
         ]);
     }
 

@@ -288,4 +288,97 @@ final class CodeSearchTest extends TestCase
         $this->assertContains('Entered by hand', $labels);
         $this->assertSame('Link changed', $labels[0], 'newest first');
     }
+
+    public function testShortWordsAreMatchedAsWholeWordsNotDropped(): void
+    {
+        $y = $this->prefixId('Y');
+        $b = $this->prefixId('B');
+        $uv = $this->suffixId('UV');
+        $one = $this->codes->assignSell(['prefix_id' => $y, 'description' => 'Pantone 100 C test 1'], $this->adminId);
+        $hundred = $this->codes->assignSell(['prefix_id' => $y, 'description' => 'Pantone 107 C test 100'], $this->adminId);
+        $ten = $this->codes->assignSell(['prefix_id' => $b, 'description' => 'Pantone 163 C test 10'], $this->adminId);
+        $yellowUv = $this->codes->assignSell(['prefix_id' => $y, 'suffix_id' => $uv, 'description' => 'Process Yellow UV'], $this->adminId);
+        $this->codes->assignSell(['prefix_id' => $y, 'description' => 'Process Yellow UVXL base'], $this->adminId);
+
+        $this->assertSame('+test*', CodeSearch::parse('test 10')['words'], 'a two-character word is not sent to the fulltext index');
+        $this->assertSame(['10'], CodeSearch::parse('test 10')['short']);
+
+        $res = $this->search->search('test 10');
+        $this->assertSame(['S' . $ten['id']], array_map(fn($p) => $p['key'], $res['products']), '"test 10" finds "test 10" only, not "test 1" or "test 100"');
+
+        $res = $this->search->search('yellow uv');
+        $this->assertSame(['S' . $yellowUv['id']], array_map(fn($p) => $p['key'], $res['products']), '"uv" must appear as a whole word');
+
+        // The per-prefix logs use the same rule.
+        $log = $this->search->log('Y', ['q' => 'test 1']);
+        $this->assertSame(['Y1715'], array_map(fn($r) => $r['display'], $log['rows']));
+        $this->assertSame(1, $this->search->log('Y', ['q' => 'uv'])['total'], 'a query made only of short words still works in a log');
+        $this->assertSame(1, $this->search->search('uv')['total'], 'a query made only of short words still works in the lookup');
+        $this->assertSame((int) $one['id'], (int) $one['id']);
+        $this->assertSame((int) $hundred['id'], (int) $hundred['id']);
+    }
+
+    public function testEverySpellingOfAnExistingSellNumberGivesTheSameResults(): void
+    {
+        $ids = $this->seedProducts();
+        // A description that happens to contain the digits of the code would otherwise appear for "y-1000" but not "Y1000".
+        $this->codes->manualSell('G1157', ['description' => 'Color match 1000 Pantone 231'], $this->adminId);
+        $expected = ['E' . $ids['e1']];
+        foreach (['Y1000', 'y-1000', 'Y 1000', 'y 1000'] as $q) {
+            $this->assertSame($expected, array_map(fn($p) => $p['key'], $this->search->search($q)['products']), "query $q");
+        }
+        // Free text that is not an existing code still searches descriptions.
+        $this->assertSame(1, $this->search->search('match 1000')['total']);
+        $this->assertSame(0, $this->search->search('Y9999')['total']);
+    }
+
+    public function testVoidedAndPrefixFiltersApplyToTheAliasesListed(): void
+    {
+        $ids = $this->seedProducts();
+        $this->codes->voidSell($ids['y1000uv'], 'Typo', $this->adminId);
+
+        $res = $this->search->search('Y1000', 1, 25, ['show' => 'voided']);
+        $this->assertSame(1, $res['total']);
+        $this->assertSame(['Y1000UV'], array_map(fn($s) => $s['display'], $res['products'][0]['sells']), 'voided only lists the voided alias, not its live siblings');
+        $rows = $this->search->exportRows('Y1000', ['show' => 'voided']);
+        $this->assertSame(['Voided'], array_column($rows, 'voided'));
+
+        $res = $this->search->search('Y1000', 1, 25, ['show' => 'active']);
+        $this->assertSame(['Y1000', 'R2156'], array_map(fn($s) => $s['display'], $res['products'][0]['sells']));
+
+        // A prefix filter must not pull in an E number whose description matches but whose sell numbers are under other prefixes.
+        $t = $this->prefixId('T');
+        $e = $this->codes->assignInternal(['description' => 'Trace blue'], $this->adminId);
+        $this->codes->assignSell(['prefix_id' => $t, 'description' => 'Trace blue tint', 'internal_code_id' => $e['id']], $this->adminId);
+        $bk = $this->prefixId('BK');
+        $e2 = $this->codes->assignInternal(['description' => 'Trace black'], $this->adminId);
+        $this->codes->assignSell(['prefix_id' => $bk, 'description' => 'Trace black', 'internal_code_id' => $e2['id']], $this->adminId);
+        $res = $this->search->search('Trace', 1, 25, ['prefix' => 'BK']);
+        $this->assertSame(['E' . $e2['id']], array_map(fn($p) => $p['key'], $res['products']));
+    }
+
+    public function testExportNamesTheProjectPerSellNumberAndHidesConfidentialOnes(): void
+    {
+        $ids = $this->seedProducts();
+        $typeId = (int) $this->db->value('SELECT id FROM chroma_project_types ORDER BY id LIMIT 1');
+        $now = $this->db->now();
+        $pid = $this->db->insert('chroma_projects', ['project_number' => 110, 'project_type_id' => $typeId, 'title' => 'Secret', 'confidential' => 1, 'status' => 'open', 'date_submitted' => '2026-10-01', 'created_by' => $this->adminId, 'created_at' => $now, 'updated_at' => $now]);
+        $this->db->insert('chroma_project_items', ['project_id' => $pid, 'sequence' => 1, 'kind' => 'color', 'description' => 'Pantone 663', 'internal_code_id' => $ids['e1'], 'sell_number_id' => $ids['y1000'], 'created_at' => $now, 'updated_at' => $now]);
+
+        $rows = $this->search->exportRows('Y1000');
+        $byCode = array_column($rows, 'project', 'sell_number');
+        $this->assertSame('Project 110', $byCode['Y1000']);
+        $this->assertSame('', $byCode['Y1000UV'], 'an alias that was not assigned on the project does not claim it');
+        $this->assertSame('', $byCode['R2156']);
+
+        $rows = $this->search->exportRows('Y1000', [], fn(array $o) => (int) $o['confidential'] !== 1);
+        $this->assertSame('Confidential project', array_column($rows, 'project', 'sell_number')['Y1000'], 'the number of a confidential project is not written out');
+        $this->assertStringNotContainsString('110', implode(' ', array_column($rows, 'project')));
+
+        // The E number's own row (no sell numbers) uses the E number's origin.
+        $orphan = $this->codes->assignInternal(['description' => 'Orphan formula'], $this->adminId);
+        $this->db->insert('chroma_project_items', ['project_id' => $pid, 'sequence' => 2, 'kind' => 'color', 'description' => 'Orphan', 'internal_code_id' => $orphan['id'], 'created_at' => $now, 'updated_at' => $now]);
+        $rows = $this->search->exportRows('Orphan');
+        $this->assertSame('Project 110', $rows[0]['project']);
+    }
 }

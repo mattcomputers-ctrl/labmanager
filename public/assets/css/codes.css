@@ -26,6 +26,14 @@
 @media (max-width: 640px) {
   .product-head, .product-origin { padding-left: var(--s-4); padding-right: var(--s-4); }
   .product-card .table th:nth-child(n+4), .product-card .table td:nth-child(n+4) { display: none; }
+  /* Three columns that share the card's width exactly, so the card never scrolls sideways by a few pixels. */
+  .product-card .table-wrap { overflow-x: hidden; }
+  .product-card .table { table-layout: fixed; width: 100%; }
+  .product-card .table th, .product-card .table td { padding-left: 8px; padding-right: 8px; overflow-wrap: anywhere; }
+  .product-card .table th:nth-child(1) { width: 44%; }
+  .product-card .table th:nth-child(3) { width: 22%; }
+  .product-card .table td:first-child { white-space: normal; }
+  .product-card .table td:first-child .code-pill { white-space: normal; }
 }
 
 /* Code logs */
@@ -78,5 +86,8 @@
 .product-pick .code-pill { background: var(--surface); }
 .wizard .prefix-choice .choice-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); }
 @media (max-width: 560px) { .wizard .prefix-choice .choice-list, .mode-expert .prefix-choice .choice-list { grid-template-columns: 1fr; } }
+.prefix-more { margin-top: var(--s-3); }
+.prefix-more > summary { cursor: pointer; font-weight: 600; color: var(--primary); padding: 10px 0; min-height: var(--touch); display: flex; align-items: center; }
+.prefix-more[open] > summary { margin-bottom: var(--s-2); }
 .assign-layout .form-grid, .page-narrow .form-grid { margin-bottom: var(--s-5); }
 .assign-layout .form-grid .field, .page-narrow .form-grid .field { margin-bottom: var(--s-2); }

@@ -7,6 +7,7 @@ use Chroma\Core\Db;
 use Chroma\Core\ValidationException;
 use Chroma\Domain\Audit\AuditLog;
 use Chroma\Domain\Codes\CodeAssigner;
+use Chroma\Domain\Codes\CodeDetails;
 
 final class CodeAssignerTest extends TestCase
 {
@@ -109,6 +110,25 @@ final class CodeAssignerTest extends TestCase
         $this->assertSame('E9500', $this->codes->assignInternal(['description' => 'b'], $this->adminId)['display']);
         $this->expectException(ValidationException::class);
         $this->codes->setInternalNext(9500, $this->adminId);
+    }
+
+    public function testImportedAndVoidedCodesAreLoggedWithTheirProvenanceAndCode(): void
+    {
+        $imported = $this->codes->manualSell('Y1001', ['description' => 'Legacy from the sheet'], $this->adminId, 'import');
+        $byHand = $this->codes->manualSell('Y1002', ['description' => 'Typed in'], $this->adminId);
+        $e = $this->codes->manualInternal('E1010', ['description' => 'Old formula'], $this->adminId, 'import');
+        $this->assertSame('code.import_sell', $this->db->value('SELECT action FROM chroma_audit_log WHERE table_name = "chroma_sell_numbers" AND row_id = ?', [$imported['id']]));
+        $this->assertSame('Imported from the spreadsheets: Y1001', $this->db->value('SELECT note FROM chroma_audit_log WHERE table_name = "chroma_sell_numbers" AND row_id = ?', [$imported['id']]));
+        $this->assertSame('code.manual_sell', $this->db->value('SELECT action FROM chroma_audit_log WHERE table_name = "chroma_sell_numbers" AND row_id = ?', [$byHand['id']]));
+        $this->assertSame('code.import_internal', $this->db->value('SELECT action FROM chroma_audit_log WHERE table_name = "chroma_internal_codes" AND row_id = ?', [$e['id']]));
+        $this->assertSame('Imported', CodeDetails::ACTIONS['code.import_internal']);
+        $this->assertSame('Filled in by the import', CodeDetails::historyRow(['action' => 'import.fill_internal'])['label']);
+
+        // Voids name the code in the note, so a search of the audit log for the code finds its void as well as its assignment.
+        $this->codes->voidSell((int) $byHand['id'], 'Typo', $this->adminId);
+        $this->codes->voidInternal((int) $e['id'], 'Mistake', $this->adminId);
+        $this->assertSame('Voided Y1002: Typo', $this->db->value('SELECT note FROM chroma_audit_log WHERE action = "code.void_sell" AND row_id = ?', [$byHand['id']]));
+        $this->assertSame('Voided E1010: Mistake', $this->db->value('SELECT note FROM chroma_audit_log WHERE action = "code.void_internal" AND row_id = ?', [$e['id']]));
     }
 
     public function testManualEntryChecksUniquenessAndIsLogged(): void

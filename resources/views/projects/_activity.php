@@ -1,16 +1,17 @@
 <?php /** Activity feed: notes (markdown + @mentions) and automatic entries. */ $pid = (int) $project['id']; ?>
 <section id="activity" class="card section-tabs">
-  <div class="card-head"><h2>Activity</h2><span class="muted small"><?= count($activity) ?> entries</span></div>
+  <div class="card-head"><h2>Activity</h2><span class="muted small"><?= e(plural(count($activity), 'entry', 'entries')) ?></span></div>
   <div class="card-body">
     <?php if ($canEdit): ?>
-    <form method="post" action="/projects/<?= $pid ?>/notes" class="note-form mb-4" x-data="{ body: '' }">
+    <form method="post" action="/projects/<?= $pid ?>/notes" class="note-form mb-4" x-data="{ body: '', empty: false }" @submit="if (!body.trim()) { $event.preventDefault(); empty = true; $el.querySelector('textarea').focus(); }">
       <?= csrf_field() ?>
-      <?= component('form/field', ['name' => 'body', 'label' => 'Add a note', 'type' => 'textarea', 'rows' => 3, 'placeholder' => 'What happened? Markdown works (**bold**, lists) and @username mentions someone.', 'attrs' => ['x-model' => 'body', '@keydown.ctrl.enter' => '$el.form.requestSubmit()', '@keydown.meta.enter' => '$el.form.requestSubmit()'], 'error' => $errors['body'] ?? null]) ?>
+      <?= component('form/field', ['name' => 'body', 'label' => 'Add a note', 'type' => 'textarea', 'rows' => 3, 'placeholder' => 'What happened? Type @name to notify someone.', 'help' => 'Plain text is fine. **bold** and lists (a line starting with -) work too.', 'attrs' => ['x-model' => 'body', '@input' => 'empty = false', ':aria-invalid' => "empty ? 'true' : null", '@keydown.ctrl.enter' => '$el.form.requestSubmit()', '@keydown.meta.enter' => '$el.form.requestSubmit()'], 'error' => $errors['body'] ?? null]) ?>
+      <p class="error-text" x-show="empty" x-cloak role="alert">Type the note first, then press Add note.</p>
       <?php if (count($items) > 0): ?>
       <div class="field"><label class="label" for="note-item">About a particular <?= e(mb_strtolower((string) $project['item_label_singular'])) ?> <span class="optional">(optional)</span></label>
         <select id="note-item" name="item_id"><option value="">The whole project</option><?php foreach ($items as $it): ?><option value="<?= (int) $it['id'] ?>"><?= (int) $it['sequence'] ?>. <?= e($it['description']) ?></option><?php endforeach; ?></select></div>
       <?php endif; ?>
-      <button type="submit" class="btn btn-primary" :disabled="!body.trim()">Add note</button>
+      <button type="submit" class="btn btn-primary">Add note</button>
       <span class="muted small">Ctrl+Enter also sends it.</span>
     </form>
     <?php endif; ?>

@@ -70,6 +70,12 @@ final class Permissions
         return array_keys(self::catalogue());
     }
 
+    /** Every admin.* key: holding any one of them opens the Admin area. @return list<string> */
+    public static function adminKeys(): array
+    {
+        return array_values(array_filter(self::all(), fn(string $k) => str_starts_with($k, 'admin.')));
+    }
+
     public static function exists(string $key): bool
     {
         return array_key_exists($key, self::catalogue());

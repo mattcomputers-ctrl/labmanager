@@ -25,9 +25,10 @@ foreach ($errors as $k => $v) { if (str_starts_with($k, 'items.')) { $itemErrors
 ?>
 <?= component('page-header', ['title' => 'New project', 'breadcrumbs' => [['Projects', '/projects'], ['New project', null]], 'lede' => 'Everything on one page. Only the type, title and customer are required; add the ' . 'colors or items below and press Create.']) ?>
 
-<form method="post" action="/projects" class="stack" novalidate
+<form method="post" action="/projects" class="stack" novalidate data-mode-carry="/wizard/new-project"
       x-data="itemsGrid(<?= json_attr(['rows' => $gridRows, 'cap' => $maxItems, 'defaultKind' => $typeMeta[$typeNow]['kind'] ?? 'color', 'type' => $typeNow, 'meta' => $typeMeta]) ?>)"
-      x-init="$watch('type', t => setKind(meta[t].kind))">
+      x-init="$watch('type', t => setKind(meta[t].kind))"
+      @keydown.ctrl.enter.prevent="$el.requestSubmit()" @keydown.meta.enter.prevent="$el.requestSubmit()">
   <?= csrf_field() ?>
   <?php if (isset($errors['_'])): ?><?= component('callout', ['type' => 'danger', 'body' => $errors['_']]) ?><?php endif; ?>
 
@@ -52,7 +53,7 @@ foreach ($errors as $k => $v) { if (str_starts_with($k, 'items.')) { $itemErrors
         <?php foreach ($fieldsByType[$code] as $spec): $n = $spec['name']; $dis = "type !== '" . $code . "'"; ?>
           <template x-if="type === '<?= e($code) ?>'">
             <?php
-            $common = ['name' => $n, 'label' => $spec['label'], 'help' => $spec['help'], 'error' => $errors[$n] ?? null, 'id' => 'f-' . $code . '-' . $n];
+            $common = ['name' => $n, 'label' => $spec['label'], 'help' => $spec['help'], 'tip' => $spec['tip'] ?? null, 'error' => $errors[$n] ?? null, 'id' => 'f-' . $code . '-' . $n];
             switch ($spec['type']) {
                 case 'textarea':
                     echo component('form/field', $common + ['type' => 'textarea', 'rows' => 3, 'value' => old($n, $defaults[$n] ?? ''), 'class' => 'span-2']);
@@ -104,7 +105,7 @@ foreach ($errors as $k => $v) { if (str_starts_with($k, 'items.')) { $itemErrors
   <div class="card">
     <div class="card-head">
       <h2><span x-text="meta[type].item_label"></span> <span class="muted small" x-text="rows.length + ' of ' + cap"></span></h2>
-      <span class="muted small">Tab or Enter from the last line adds another. Paste a list into a description to fill several lines.</span>
+      <span class="muted small">Enter moves to the next line and adds one after the last. Paste a list into a description to fill several lines. Ctrl+Enter creates the project.</span>
     </div>
     <?php if ($itemErrors || isset($errors['items'])): ?><div class="card-body" style="padding-bottom:0"><?= component('callout', ['type' => 'danger', 'body' => implode("\n", array_unique(array_merge($itemErrors, isset($errors['items']) ? [$errors['items']] : [])))]) ?></div><?php endif; ?>
     <div class="table-wrap" style="border:0;box-shadow:none;border-radius:0">
@@ -121,7 +122,7 @@ foreach ($errors as $k => $v) { if (str_starts_with($k, 'items.')) { $itemErrors
                   <div class="lookup existing-lookup" x-data="lookup({ name: 'existing', url: '/api/codes/search?q=', initialValue: row.existing_ref, initialLabel: row.existing_label, minChars: 1 })" @click.outside="open = false" @lookup-chosen="pickExisting(i, $event.detail.item)">
                     <input type="hidden" :name="'items[' + i + '][existing_ref]'" :value="value">
                     <input type="hidden" :name="'items[' + i + '][existing_label]'" :value="q">
-                    <input type="text" x-model="q" @input="onInput()" @keydown.down.prevent="move(1)" @keydown.up.prevent="move(-1)" @keydown.enter="enter($event)" placeholder="E# or sell number" autocomplete="off" aria-label="Existing code">
+                    <input type="text" x-model="q" @input="onInput()" @keydown.down.prevent="move(1)" @keydown.up.prevent="move(-1)" @keydown.enter="enter($event); if (!$event.defaultPrevented) enterNext($event, i)" placeholder="E# or sell number" autocomplete="off" aria-label="Existing code">
                     <div class="lookup-list" x-show="open" x-cloak>
                       <template x-for="(item, k) in results" :key="item.id"><div class="lookup-item" :class="{ active: k === active }" @mousedown.prevent="choose(item)"><span x-text="item.label"></span> <span class="sub" x-text="item.sub"></span></div></template>
                       <div class="lookup-empty" x-show="!loading && results.length === 0">No code matches yet.</div>
@@ -130,10 +131,10 @@ foreach ($errors as $k => $v) { if (str_starts_with($k, 'items.')) { $itemErrors
                 </template>
                 <span class="muted small" x-show="row.kind !== 'existing_product'">—</span>
               </td>
-              <td><input type="text" :name="'items[' + i + '][pantone]'" x-model="row.pantone" maxlength="60" style="width:110px" aria-label="Pantone"></td>
-              <td><input type="text" :name="'items[' + i + '][hex_color]'" x-model="row.hex_color" maxlength="7" placeholder="#RRGGBB" style="width:96px" aria-label="Hex color"></td>
-              <td><input type="number" :name="'items[' + i + '][proof_count]'" x-model="row.proof_count" min="0" max="999" style="width:70px" aria-label="Proofs"></td>
-              <td><input type="hidden" :name="'items[' + i + '][is_digital_match]'" value="0"><input type="checkbox" :name="'items[' + i + '][is_digital_match]'" value="1" x-model="row.is_digital_match" aria-label="Digital match"></td>
+              <td><input type="text" :name="'items[' + i + '][pantone]'" x-model="row.pantone" maxlength="60" style="width:110px" aria-label="Pantone" @keydown="enterNext($event, i)"></td>
+              <td><input type="text" :name="'items[' + i + '][hex_color]'" x-model="row.hex_color" maxlength="7" placeholder="#RRGGBB" style="width:96px" aria-label="Hex color" @keydown="enterNext($event, i)"></td>
+              <td><input type="number" :name="'items[' + i + '][proof_count]'" x-model="row.proof_count" min="0" max="999" style="width:70px" aria-label="Proofs" @keydown="enterNext($event, i)"></td>
+              <td><input type="hidden" :name="'items[' + i + '][is_digital_match]'" value="0"><input type="checkbox" :name="'items[' + i + '][is_digital_match]'" value="1" x-model="row.is_digital_match" aria-label="Digital match" @keydown="enterNext($event, i)"></td>
               <td><input type="text" :name="'items[' + i + '][notes]'" x-model="row.notes" style="min-width:140px" aria-label="Notes" @keydown="lastCell($event, i)"></td>
               <td class="rm"><button type="button" class="btn btn-ghost btn-icon" @click="remove(i)" aria-label="Remove line" title="Remove this line">&times;</button></td>
             </tr>

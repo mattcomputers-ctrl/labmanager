@@ -13,6 +13,7 @@ $router->get('/api/codes/preview', [CodeApiController::class, 'preview'])->permi
 $router->get('/api/prefixes', [CodeApiController::class, 'prefixes'])->permission(Permissions::CODES_VIEW);
 
 // Typeahead sources
-$router->get('/api/customers', [LookupApiController::class, 'customers']);
-$router->get('/api/users', [LookupApiController::class, 'users']);
+// Type-ahead lists: open to anyone who can fill in a screen that uses them (projects, quick assign, manual entry, admin lists and users).
+$router->get('/api/customers', [LookupApiController::class, 'customers'])->anyPermission(Permissions::PROJECTS_CREATE, Permissions::PROJECTS_EDIT, Permissions::CODES_ASSIGN_INTERNAL, Permissions::CODES_ASSIGN_SELL, Permissions::CODES_MANUAL_ENTRY, Permissions::ADMIN_LISTS);
+$router->get('/api/users', [LookupApiController::class, 'users'])->anyPermission(Permissions::PROJECTS_CREATE, Permissions::PROJECTS_EDIT, Permissions::ADMIN_USERS);
 $router->get('/api/codes/search', [LookupApiController::class, 'codes'])->permission(Permissions::CODES_VIEW);

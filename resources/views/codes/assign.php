@@ -25,7 +25,7 @@ $cfg = [
 <div x-data="quickAssign(<?= json_attr($cfg) ?>)" @lookup-chosen="onChosen($event.detail)">
 <div class="assign-layout">
   <div>
-    <form method="post" action="/assign" class="card" @submit.prevent="submit()" x-show="!result" novalidate>
+    <form method="post" action="/assign" class="card" @submit.prevent="submit()" x-show="!result" novalidate data-mode-carry="/wizard/quick-assign">
       <?= csrf_field() ?>
       <div class="card-body">
         <div class="callout callout-danger" x-show="error && !Object.keys(errors).length" x-cloak role="alert"><div x-text="error"></div></div>
@@ -61,16 +61,19 @@ $cfg = [
 
         <div class="form-grid" x-show="wantSell">
           <div class="field">
-            <label class="label" for="f-prefix">Prefix <span class="req" aria-hidden="true">*</span></label>
+            <label class="label" for="f-prefix">Prefix <span class="req" aria-hidden="true">*</span> <?= component('help-tip', ['text' => \Chroma\Http\Tips::PREFIX]) ?></label>
             <select id="f-prefix" name="prefix_id" x-model="prefixId" :aria-invalid="errors.prefix_id ? 'true' : null">
               <option value="">Choose a prefix…</option>
-              <template x-for="p in prefixes" :key="p.id"><option :value="p.id" x-text="p.code + ' — ' + p.label + (p.tag ? ' (' + p.tag + ')' : '') + '   next: ' + p.next"></option></template>
+              <?php // Options are rendered here, not with x-for: x-model initialises before an x-for has created the options, so a prefix_id carried in the URL (from the wizard) would be lost.
+              foreach ($prefixes as $p): $tag = (string) ($p['tag'] ?? ''); $showTag = $tag !== '' && mb_stripos((string) $p['label'], $tag) === false; ?>
+              <option value="<?= (int) $p['id'] ?>"<?= (string) $defaults['prefix_id'] === (string) $p['id'] ? ' selected' : '' ?>><?= e($p['code'] . ' — ' . $p['label'] . ($showTag ? ' (' . $tag . ')' : '') . '   next: ' . $p['next']) ?></option>
+              <?php endforeach; ?>
             </select>
             <p class="help" x-text="prefix ? prefix.description : 'The prefix says what kind of product this is. The next free number is shown for each.'"></p>
             <p class="error-text" role="alert" x-show="errors.prefix_id" x-cloak><span x-text="errors.prefix_id"></span></p>
           </div>
           <div class="field" x-show="suffixes.length">
-            <span class="label" id="l-suffix">Suffix</span>
+            <span class="label" id="l-suffix">Suffix <?= component('help-tip', ['text' => \Chroma\Http\Tips::SUFFIX]) ?></span>
             <div class="choice-list inline" role="radiogroup" aria-labelledby="l-suffix">
               <label class="choice"><input type="radio" name="suffix_id" value="" x-model="suffixId"><span><span class="choice-title">(none)</span></span></label>
               <template x-for="s in suffixes" :key="s.id"><label class="choice"><input type="radio" name="suffix_id" :value="s.id" x-model="suffixId"><span><span class="choice-title" x-text="s.code"></span><br><span class="choice-desc" x-text="s.label"></span></span></label></template>
@@ -88,7 +91,7 @@ $cfg = [
 
         <div class="form-grid" x-show="wantSell">
           <div class="field">
-            <label class="label" for="f-reason">Reason <span class="req" aria-hidden="true" x-show="needsReason">*</span><span class="optional" x-show="!needsReason">(optional)</span></label>
+            <label class="label" for="f-reason">Reason <span class="req" aria-hidden="true" x-show="needsReason">*</span><span class="optional" x-show="!needsReason">(optional)</span> <?= component('help-tip', ['text' => \Chroma\Http\Tips::REASON]) ?></label>
             <select id="f-reason" name="reason" x-model="reason" :aria-invalid="errors.reason ? 'true' : null">
               <option value="">Pick a reason…</option>
               <?php foreach ($reasons as $k => $label): ?><option value="<?= e($k) ?>"><?= e($label) ?></option><?php endforeach; ?>
@@ -118,7 +121,7 @@ $cfg = [
       </div>
       <div class="form-actions" style="padding:var(--s-4) var(--s-6) var(--s-6);margin-top:0">
         <button type="submit" class="btn btn-primary btn-lg" :disabled="busy || wants.length === 0"><span x-text="busy ? 'Reserving…' : 'Assign the code'"></span></button>
-        <span class="muted small">Nothing is reserved until you press the button. Numbers are never reused; void a mistake afterwards.</span>
+        <span class="muted small">Nothing is reserved until you press the button. Numbers are never reused; <?= can('codes.void') ? 'void a mistake afterwards.' : 'an administrator can void a mistake afterwards.' ?></span>
       </div>
     </form>
 

@@ -11,10 +11,20 @@
 .table td.progress-cell { min-width: 150px; }
 .mode-easy .projects-table td { font-size: var(--fs-m); }
 .mode-easy .projects-table .proj-title { font-weight: 600; }
-.proj-desc { color: var(--text-2); font-size: var(--fs-s); max-width: 420px; }
+/* Title/description and customer are capped so the Status column (the list's main filter) stays on a 1366px screen. */
+.projects-table .title-cell { max-width: 38ch; }
+.projects-table .title-cell .proj-title { max-width: 38ch; }
+.proj-desc { color: var(--text-2); font-size: var(--fs-s); max-width: 38ch; }
+.table-dense .projects-table td.customer-cell { max-width: 180px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.table-dense .projects-table td.progress-cell { min-width: 120px; }
+.table-dense .projects-table .progress-label { white-space: nowrap; }
 .status-pill { white-space: nowrap; }
 
 /* ---- project header ---- */
+.more-menu { position: relative; display: inline-block; }
+.more-menu .menu-panel { right: 0; left: auto; min-width: 200px; }
+.more-menu .menu-item-form { display: block; }
+.more-menu .menu-item-form > .btn { width: 100%; justify-content: flex-start; border: 0; }
 .project-head { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: var(--s-5); align-items: start; }
 @media (max-width: 960px) { .project-head { grid-template-columns: 1fr; } }
 .project-number { font-family: var(--mono); color: var(--text-2); font-weight: 600; letter-spacing: .02em; }
@@ -39,19 +49,39 @@
 .team-list .badge { font-weight: 500; }
 
 /* ---- items table ---- */
+/* The description is the only column that can wrap, so give it a floor and keep the number column from hogging width;
+   on a narrow screen the wrapper scrolls sideways (with a shadow cue from chroma.css) instead of squeezing the text. */
+.items-table th.item-desc-col, .items-table td.item-desc-cell { min-width: 220px; }
+.items-table th.num-col, .items-table td.num.nowrap { width: 1%; white-space: nowrap; }
 .items-table .chip { margin-right: 6px; vertical-align: middle; }
 .items-table .item-desc { font-weight: 600; }
-.items-table .item-sub { color: var(--text-3); font-size: var(--fs-xs); }
+.items-table .item-sub { color: var(--text-3); font-size: var(--fs-s); }
 .items-table .sell-cell .code-pill { font-size: 1.05em; font-weight: 700; }
-.items-table .iqc { display: block; font-size: var(--fs-xs); color: var(--text-3); }
+.items-table .iqc { display: block; font-size: var(--fs-s); color: var(--text-3); }
 .items-table .digital { display: inline-block; font-size: var(--fs-xs); font-weight: 700; letter-spacing: .04em; padding: 2px 6px; border-radius: 4px; background: var(--primary-soft); color: var(--primary); text-transform: uppercase; }
 .items-table .row-actions { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; justify-content: flex-end; }
 .items-table .row-actions .btn { white-space: nowrap; }
+/* Expert (dense): Edit / Move / Remove stay on one line so a row is one line tall. */
+.table-dense.items-table td.actions-cell { white-space: nowrap; }
+.table-dense.items-table .row-actions { flex-wrap: nowrap; }
+.table-dense.items-table .row-actions form { display: inline; }
+.items-table th.check-col, .items-table td.check-col { width: 1%; padding-left: var(--s-2); padding-right: 0; }
+.items-table .check-cell { margin: 0; padding: 10px; min-height: 0; justify-content: center; }
+.items-table .check-cell input { margin: 0; }
+.items-table tr.row-flash td { background: var(--primary-soft) !important; transition: background .3s; }
 .items-table .status-select { min-height: 36px; padding: 4px 28px 4px 8px; font-size: var(--fs-s); width: auto; max-width: 150px; }
 .items-table tr.dragover td { border-top: 2px solid var(--primary); }
 .items-table .drag-handle { cursor: grab; color: var(--text-3); padding: 0 4px; }
 .items-table .order-btns { display: inline-flex; flex-direction: column; }
 .items-table .order-btns .btn { min-height: 20px; height: 20px; padding: 0 4px; line-height: 1; }
+/* On touch the drag handle does nothing (HTML5 drag needs a mouse), so the arrows are the only way to reorder: finger-sized, with a gap. */
+@media (pointer: coarse) {
+  .items-table .drag-handle { display: none; }
+  .items-table .order-btns { gap: 4px; }
+  .items-table .order-btns .btn { min-height: 30px; height: 30px; min-width: 36px; padding: 0 6px; }
+  .items-table .status-select { min-height: var(--touch); }
+  .items-grid td.rm .btn { min-height: var(--touch); width: var(--touch); }
+}
 .mode-easy .items-table .item-desc { font-size: var(--fs-l); }
 .mode-easy .items-table td { padding-top: var(--s-3); padding-bottom: var(--s-3); height: auto; }
 .mode-easy .items-table .row-actions .btn { min-height: 44px; }
@@ -68,6 +98,11 @@
 /* ---- Expert new-project grid ---- */
 .items-grid td.rm .btn { min-height: 36px; }
 .items-grid .existing-lookup { min-width: 200px; }
+/* Cells keep a usable width when the grid is wider than the screen (otherwise a 100%-wide select collapses to its padding). */
+.items-grid td { white-space: nowrap; }
+.items-grid select { min-width: 130px; width: auto; }
+.items-grid input[type=text] { min-width: 140px; }
+.items-grid td:nth-child(3) input[type=text] { min-width: 240px; }
 .grid-foot { display: flex; gap: var(--s-3); align-items: center; flex-wrap: wrap; margin-top: var(--s-3); }
 .type-fields { display: contents; }
 
@@ -78,6 +113,7 @@
 .feed .feed-item-ref { color: var(--text-3); font-size: var(--fs-xs); }
 .note-form textarea { min-height: 80px; }
 .task-row.done .task-title { text-decoration: line-through; color: var(--text-3); }
+.task-row .grow { min-width: 0; overflow-wrap: anywhere; } /* a long title or due badge must not push the × past the phone's edge */
 .task-meta { color: var(--text-3); font-size: var(--fs-xs); }
 .att-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: var(--s-3); }
 .att-card { border: 1px solid var(--border); border-radius: var(--radius-s); padding: var(--s-2); display: flex; flex-direction: column; gap: 6px; min-width: 0; }
@@ -145,6 +181,22 @@
   .mode-easy .table-wrap.w-full { overflow: visible; border: 0; box-shadow: none; background: transparent; }
   .head-fields { grid-template-columns: 1fr; }
   .items-table .row-actions { justify-content: flex-start; }
+  /* Easy mode: each item is a card with every button in view, nothing hidden off the right edge. */
+  .mode-easy .items-table thead { display: none; }
+  .mode-easy .items-table, .mode-easy .items-table tbody, .mode-easy .items-table tr { display: block; width: 100%; }
+  .mode-easy .items-table td { display: flex; gap: var(--s-2); align-items: center; flex-wrap: wrap; border: 0; height: auto; padding: 4px 0; width: 100%; min-width: 0; white-space: normal; }
+  .mode-easy .items-table td::before { content: attr(data-label); flex: 0 0 84px; font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: .04em; color: var(--text-3); font-weight: 600; }
+  .mode-easy .items-table tr { width: auto; border: 1px solid var(--border); border-radius: var(--radius); padding: var(--s-3); margin: 0 var(--s-3) var(--s-3); background: var(--surface); }
+  .mode-easy .items-table td.num { display: none; }
+  .mode-easy .items-table td.item-desc-cell { display: block; padding-bottom: var(--s-2); }
+  .mode-easy .items-table td.item-desc-cell::before { display: none; }
+  .mode-easy .items-table td.item-desc-cell .item-desc::before { content: attr(data-n) '. '; color: var(--text-3); font-weight: 600; }
+  .mode-easy .items-table td.actions-cell { display: block; padding-top: var(--s-2); }
+  .mode-easy .items-table td.actions-cell::before { display: none; }
+  .mode-easy .items-table td.actions-cell .row-actions { justify-content: flex-start; }
+  .mode-easy .items-table .status-select { max-width: none; flex: 1; }
+  .mode-easy #items .table-wrap { overflow: visible; }
+  .mode-easy .items-table .item-sub { font-size: var(--fs); }
   .assign-pop .pop { position: fixed; left: 8px; right: 8px; top: auto; bottom: 8px; width: auto; max-width: none; }
   .print-fields { grid-template-columns: 1fr 1fr; }
   .cards { grid-template-columns: 1fr; }
@@ -158,5 +210,7 @@
 .quick-add input, .quick-add select { min-height: 40px; font-size: var(--fs-s); width: auto; }
 .quick-add .grow { flex: 1 1 240px; }
 .formula-card .fc-none { font-size: 14px; color: #777; font-style: italic; }
+.formula-card .fc-void { text-decoration: line-through; color: #888; font-weight: 500; }
+.formula-card .fc-void-label { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: #b00020; border: 1px solid #b00020; border-radius: 4px; padding: 1px 6px; margin-left: -8px; }
 /* chroma.css makes .items-grid th sticky with top: var(--topbar-h); inside a scrolling .table-wrap that offsets the header into the first row, so the grid header is static here. */
 .items-grid th { position: static; top: auto; }

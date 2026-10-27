@@ -2,8 +2,8 @@
 $mode = old('product_mode', $state['product_mode'] ?? 'existing');
 ?>
 <div class="wizard">
-  <?= $view->partial('wizard/_progress', ['n' => $n, 'total' => $total, 'wizard' => $wizard]) ?>
-  <form method="post" action="/wizard/<?= e($wizard->key()) ?>/step/<?= (int) $n ?>" class="card wizard-card" novalidate x-data="{ mode: '<?= e($mode) ?>' }" @change="if ($event.target.name === 'product_mode') mode = $event.target.value">
+  <?= $view->partial('wizard/_progress', ['n' => $n, 'total' => $total, 'known' => $known ?? true, 'wizard' => $wizard]) ?>
+  <form method="post" action="/wizard/<?= e($wizard->key()) ?>/step/<?= (int) $n ?>" class="card wizard-card" novalidate x-data="<?= json_attr(['mode' => $mode]) ?>" @change="if ($event.target.name === 'product_mode') mode = $event.target.value">
     <?= csrf_field() ?>
     <?php if (!empty($state['_edit'])): ?><input type="hidden" name="_jump" value="review"><?php endif; ?>
     <h1><?= e($step->title) ?></h1>

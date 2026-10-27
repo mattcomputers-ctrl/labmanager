@@ -8,6 +8,7 @@ $pj = $status['project'];
 <?= component('page-header', [
     'title' => 'Sequences',
     'lede' => 'The two shared counters: the next E number and the next project number. Each can be moved to skip a block, but never to a number that has already been given out. Prefix counters are set on each prefix.',
+    'actions' => can('codes.export') ? component('button', ['label' => 'Export CSV', 'size' => 'sm', 'href' => '/admin/sequences?export=csv']) . ' ' . component('button', ['label' => 'Export Excel', 'size' => 'sm', 'href' => '/admin/sequences?export=xlsx']) : '',
 ]) ?>
 
 <div class="grid grid-2 prefix-edit-grid">
@@ -19,7 +20,7 @@ $pj = $status['project'];
         <div class="stat"><div class="stat-value code"><?= e($e['highest_display'] !== '' ? $e['highest_display'] : '—') ?></div><div class="stat-label">Highest E number used<?= $e['highest_display'] === '' ? ' (none yet)' : '' ?></div></div>
         <div class="stat"><div class="stat-value code"><?= e($e['next_display']) ?></div><div class="stat-label">Next E number to be given out</div></div>
       </div>
-      <?= component('form/field', ['name' => 'next_value', 'label' => 'Set the next E number to', 'type' => 'number', 'min' => $e['highest'] + 1, 'value' => old('next_value', (string) $e['next']), 'prefix' => 'E', 'required' => true, 'attrs' => ['style' => 'max-width:200px'], 'help' => sprintf('Whole number only, at least %d. Use this to start a new block, for example after the legacy import.', $e['highest'] + 1)]) ?>
+      <?= component('form/field', ['name' => 'next_value', 'label' => 'Set the next E number to', 'type' => 'number', 'tip' => \Chroma\Http\Tips::NEXT_NUMBER, 'min' => $e['highest'] + 1, 'value' => old('next_value', (string) $e['next']), 'prefix' => 'E', 'required' => true, 'attrs' => ['style' => 'max-width:200px'], 'help' => sprintf('Whole number only, at least %d. Use this to start a new block, for example after the legacy import.', $e['highest'] + 1)]) ?>
     </div>
     <div class="card-foot form-actions"><button type="submit" class="btn btn-primary">Move the E counter</button></div>
   </form>
@@ -32,7 +33,7 @@ $pj = $status['project'];
         <div class="stat"><div class="stat-value"><?= $pj['highest'] > 0 ? (int) $pj['highest'] : '—' ?></div><div class="stat-label">Highest project number used<?= $pj['highest'] === 0 ? ' (none yet)' : '' ?></div></div>
         <div class="stat"><div class="stat-value"><?= (int) $pj['next'] ?></div><div class="stat-label">Next project number</div></div>
       </div>
-      <?= component('form/field', ['name' => 'project_next', 'label' => 'Set the next project number to', 'type' => 'number', 'min' => $pj['highest'] + 1, 'value' => old('project_next', (string) $pj['next']), 'required' => true, 'attrs' => ['style' => 'max-width:200px'], 'help' => sprintf('Whole number only, at least %d. New projects count up from here.', $pj['highest'] + 1)]) ?>
+      <?= component('form/field', ['name' => 'project_next', 'label' => 'Set the next project number to', 'type' => 'number', 'tip' => \Chroma\Http\Tips::NEXT_NUMBER, 'min' => $pj['highest'] + 1, 'value' => old('project_next', (string) $pj['next']), 'required' => true, 'attrs' => ['style' => 'max-width:200px'], 'help' => sprintf('Whole number only, at least %d. New projects count up from here.', $pj['highest'] + 1)]) ?>
     </div>
     <div class="card-foot form-actions"><button type="submit" class="btn btn-primary">Move the project counter</button></div>
   </form>

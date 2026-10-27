@@ -53,7 +53,30 @@ final class WizardController extends Controller
             $state = $this->state($w) + $state;
         }
         $this->save($w, $state);
+        if ($request->bool('jump')) {
+            // Coming from the Expert page with its values: skip what is already answered and land on the first open question
+            // (or the review when everything is there) instead of starting over at step 1.
+            $n = $this->firstIncomplete($w, $state);
+            return $this->redirect('/wizard/' . $w->key() . '/' . ($n === null ? 'review' : 'step/' . $n));
+        }
         return $this->redirect('/wizard/' . $w->key() . '/step/1');
+    }
+
+    /** 1-based number of the first step whose answers are missing or invalid, or null when every step is complete. @param array<string,mixed> $state */
+    private function firstIncomplete(Wizard $w, array $state): ?int
+    {
+        try {
+            foreach ($w->steps($state) as $i => $step) {
+                try {
+                    $w->validateStep($step, $state, $state);
+                } catch (ValidationException) {
+                    return $i + 1;
+                }
+            }
+        } catch (\Throwable) {
+            return 1;
+        }
+        return null;
     }
 
     public function step(Request $request): Response
@@ -72,6 +95,8 @@ final class WizardController extends Controller
             'step' => $step,
             'n' => $n,
             'total' => count($steps) + 1,
+            // False while the next answer decides how many steps there are: the shell then shows no total and never says "Review".
+            'known' => $w->stepCountKnown($state),
             'state' => $state,
             'expertUrl' => $w->expertUrl($state) ?? url('/mode', ['set' => 'expert', 'return' => $w->cancelUrl($state)]),
             'easyUrl' => $request->fullUrl(),
@@ -88,14 +113,20 @@ final class WizardController extends Controller
             return $this->redirect('/wizard/' . $w->key() . '/review');
         }
         $step = $steps[$n - 1];
-        if ($request->input('_back') !== null) {
-            // Going back keeps whatever was typed, without validating it.
+        if ($request->input('_back') !== null || $request->input('_mode') === 'expert') {
+            // Going back (or switching to Expert mid-step) keeps whatever was typed, without validating it.
             foreach ($step->fields as $f) {
-                if (array_key_exists($f['name'], $request->body)) {
-                    $state[$f['name']] = is_string($request->body[$f['name']]) ? trim($request->body[$f['name']]) : $request->body[$f['name']];
+                foreach ([$f['name'], $f['name'] . '_text', $f['name'] . '_label'] as $k) {
+                    if (array_key_exists($k, $request->body)) {
+                        $state[$k] = is_string($request->body[$k]) ? trim($request->body[$k]) : $request->body[$k];
+                    }
                 }
             }
             $this->save($w, $state);
+            if ($request->input('_mode') === 'expert') {
+                // The Expert page for the same task, carrying every answer so far including this half-filled step.
+                return $this->redirect($w->expertUrl($state) ?? url('/mode', ['set' => 'expert', 'return' => $w->cancelUrl($state)]));
+            }
             return $this->redirect('/wizard/' . $w->key() . '/step/' . max(1, $n - 1));
         }
         try {
@@ -121,13 +152,10 @@ final class WizardController extends Controller
         $state = $this->state($w);
         $steps = $w->steps($state);
         // Make sure every step has been answered; if not, send the user there.
-        foreach ($steps as $i => $step) {
-            try {
-                $w->validateStep($step, $state, $state);
-            } catch (ValidationException) {
-                $this->app->flash->info('A few answers are still missing.');
-                return $this->redirect('/wizard/' . $w->key() . '/step/' . ($i + 1));
-            }
+        $missing = $this->firstIncomplete($w, $state);
+        if ($missing !== null) {
+            $this->app->flash->info('A few answers are still missing.');
+            return $this->redirect('/wizard/' . $w->key() . '/step/' . $missing);
         }
         return $this->view('wizard/review', [
             'title' => $w->title(),

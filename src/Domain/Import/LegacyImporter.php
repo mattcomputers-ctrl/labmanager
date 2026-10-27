@@ -636,8 +636,6 @@ final class LegacyImporter
             }
 
             $createdInternal = [];
-            $noDateInternal = [];
-            $noDateSell = [];
             $customerCache = [];
             $customerId = function (?string $name) use (&$customerCache, &$applied): ?int {
                 if ($name === null || $name === '') {
@@ -671,10 +669,9 @@ final class LegacyImporter
                         $payload = [
                             'description' => $d['description'], 'resale' => $d['resale'], 'vendor_name' => $d['vendor_name'], 'vendor_code' => $d['vendor_code'],
                             'legacy_handschy_number' => $d['legacy_handschy_number'], 'original_customer_id' => $customerId($d['customer']), 'notes' => $d['notes'],
+                            // Passed even when null: a row with no date in the sheet keeps no date (CodeAssigner only defaults to today when the key is absent), and the audit snapshot then matches the row.
+                            'date_assigned' => $d['date_assigned'],
                         ];
-                        if ($d['date_assigned'] !== null) {
-                            $payload['date_assigned'] = $d['date_assigned'];
-                        }
                         try {
                             $row = $this->codes->manualInternal($a['code'], $payload, $actorId, self::SOURCE);
                         } catch (ValidationException $e) {
@@ -683,9 +680,6 @@ final class LegacyImporter
                             break;
                         }
                         $createdInternal[$a['key']] = (int) $row['id'];
-                        if ($d['date_assigned'] === null) {
-                            $noDateInternal[] = (int) $row['id'];
-                        }
                         $applied['create_internal']++;
                         break;
 
@@ -708,19 +702,14 @@ final class LegacyImporter
                         $payload = [
                             'description' => $d['description'], 'legacy_text' => $d['legacy_text'], 'internal_code_id' => $internalId($d['internal_key']),
                             'legacy_internal_code' => $d['legacy_internal_code'], 'original_customer_id' => $customerId($d['customer']), 'notes' => $d['notes'],
+                            'date_assigned' => $d['date_assigned'],
                         ];
-                        if ($d['date_assigned'] !== null) {
-                            $payload['date_assigned'] = $d['date_assigned'];
-                        }
                         try {
                             $row = $this->codes->manualSell($a['code'], $payload, $actorId, self::SOURCE, true);
                         } catch (ValidationException $e) {
                             $this->refused($plan, $a, $e->getMessage());
                             $applied['refused']++;
                             break;
-                        }
-                        if ($d['date_assigned'] === null) {
-                            $noDateSell[] = (int) $row['id'];
                         }
                         $applied['create_sell']++;
                         break;
@@ -747,14 +736,6 @@ final class LegacyImporter
                         $applied['update_sell']++;
                         break;
                 }
-            }
-
-            // Rows with no date in the sheet keep no date (CodeAssigner defaults to today).
-            foreach (array_chunk($noDateInternal, 500) as $chunk) {
-                $db->run('UPDATE chroma_internal_codes SET date_assigned = NULL WHERE id IN (' . implode(',', array_map('intval', $chunk)) . ')');
-            }
-            foreach (array_chunk($noDateSell, 500) as $chunk) {
-                $db->run('UPDATE chroma_sell_numbers SET date_assigned = NULL WHERE id IN (' . implode(',', array_map('intval', $chunk)) . ')');
             }
 
             $applied['counters'] = $this->moveCounters($db, $actorId);

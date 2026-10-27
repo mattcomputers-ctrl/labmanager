@@ -7,7 +7,8 @@ $retired = array_filter($prefixes, fn($p) => (int) $p['retired'] === 1);
 <?= component('page-header', [
     'title' => 'Code logs',
     'lede' => 'One log per prefix, newest first: the replacement for the Security log, the UV log and the other sheets. The E number log lists every formula code.',
-    'actions' => can('codes.view') ? component('button', ['label' => 'Code lookup', 'href' => '/codes']) : '',
+    'actions' => component('button', ['label' => 'Code lookup', 'href' => '/codes'])
+        . (can('codes.export') && $total > 0 ? ' ' . component('button', ['label' => 'Export CSV', 'size' => 'sm', 'href' => '/codes/logs?export=csv']) . ' ' . component('button', ['label' => 'Export Excel', 'size' => 'sm', 'href' => '/codes/logs?export=xlsx']) : ''),
 ]) ?>
 
 <?php if ($total === 0): ?>

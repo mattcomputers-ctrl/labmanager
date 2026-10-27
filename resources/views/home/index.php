@@ -38,16 +38,16 @@
       <div class="card-head"><h2>Your open projects</h2><a href="/projects?mine=1" class="small">See all</a></div>
       <?php if ($myProjects): ?>
       <div class="table-wrap" style="border:0;box-shadow:none;border-radius:0">
-        <table class="table">
+        <table class="table home-table home-projects">
           <thead><tr><th>#</th><th>Project</th><th>Customer</th><th>Progress</th><th>Submitted</th></tr></thead>
           <tbody>
           <?php foreach ($myProjects as $p): ?>
             <tr class="clickable" data-href="/projects/<?= (int) $p['id'] ?>">
               <td class="num"><a class="row-link" href="/projects/<?= (int) $p['id'] ?>"><?= (int) $p['project_number'] ?></a></td>
               <td><?= component('badge', ['label' => $p['type_label'], 'color' => $p['type_color']]) ?> <?= e($p['title']) ?></td>
-              <td><?= e($p['customer'] ?? '—') ?></td>
+              <td class="home-secondary"><?= e($p['customer'] ?? '—') ?></td>
               <td style="min-width:140px"><?php $pct = $p['item_count'] ? (int) round($p['items_done'] / $p['item_count'] * 100) : 0; ?><div class="progress" title="<?= (int) $p['items_done'] ?> of <?= (int) $p['item_count'] ?> done"><span style="width:<?= $pct ?>%"></span></div><div class="progress-label"><?= (int) $p['items_done'] ?> of <?= (int) $p['item_count'] ?> done</div></td>
-              <td class="nowrap"><?= e(fmt_date($p['date_submitted'])) ?></td>
+              <td class="nowrap home-secondary" data-label="Submitted"><?= e(fmt_date($p['date_submitted'])) ?></td>
             </tr>
           <?php endforeach; ?>
           </tbody>
@@ -64,16 +64,16 @@
       <div class="card-head"><h2>Latest sell numbers</h2><a href="/codes/logs" class="small">Code logs</a></div>
       <?php if ($recentCodes): ?>
       <div class="table-wrap" style="border:0;box-shadow:none;border-radius:0">
-        <table class="table">
+        <table class="table home-table home-codes">
           <thead><tr><th>Sell number</th><th>E#</th><th>Description</th><th>Customer</th><th>Date</th></tr></thead>
           <tbody>
           <?php foreach ($recentCodes as $c): ?>
             <tr>
               <td><?= component('code-pill', ['code' => $c['sell_number'], 'href' => '/codes/s/' . (int) $c['sell_number_id']]) ?></td>
-              <td><?= $c['internal_code'] ? component('code-pill', ['code' => $c['internal_code'], 'href' => '/codes/e/' . (int) $c['internal_code_id']]) : '<span class="muted">—</span>' ?></td>
+              <td><?= $c['internal_code'] ? component('code-pill', ['code' => $c['internal_code'], 'href' => '/codes/e/' . (int) $c['internal_code_id'], 'void' => (int) $c['internal_code_voided'] === 1]) : '<span class="muted">—</span>' ?></td>
               <td class="truncate" style="max-width:320px"><?= e($c['description']) ?></td>
-              <td><?= e($c['customer'] ?? '') ?></td>
-              <td class="nowrap"><?= e(fmt_date($c['date_assigned'])) ?></td>
+              <td class="home-secondary"><?= e($c['customer'] ?? '') ?></td>
+              <td class="nowrap home-secondary"><?= e(fmt_date($c['date_assigned'])) ?></td>
             </tr>
           <?php endforeach; ?>
           </tbody>

@@ -55,8 +55,14 @@ final class ItemsController extends ProjectController
         $after = $this->items->setStatus((int) $item['id'], (int) $request->int('status_id', 0), $this->userId());
         $fresh = $this->projects->get((int) $project['id']);
         $completed = $fresh['status'] === 'completed' && $project['status'] !== 'completed';
-        $this->success('"' . $after['description'] . '" is now ' . mb_strtolower((string) $after['status_label']) . '.', $completed ? 'Every item is done, so the project was completed.' : null);
-        return $this->finish($request, $this->projectUrl((int) $project['id'], '#items'), ['item' => $this->itemJson($after), 'progress' => $fresh['progress'], 'project_status' => $fresh['status'], 'completed' => $completed]);
+        $message = '"' . $after['description'] . '" is now ' . mb_strtolower((string) $after['status_label']) . '.';
+        $detail = $completed ? 'Every item is done, so the project was completed.' : null;
+        // The Expert page updates in place and shows the toast itself; it only reloads when the project completed,
+        // so the flash is kept for that reload (and for plain form posts) and not left to pop up on a later page.
+        if (!$request->wantsJson() || $completed) {
+            $this->success($message, $detail);
+        }
+        return $this->finish($request, $this->projectUrl((int) $project['id'], '#items'), ['item' => $this->itemJson($after), 'progress' => $fresh['progress'], 'project_status' => $fresh['status'], 'completed' => $completed, 'message' => $message, 'detail' => $detail]);
     }
 
     /** POST direction=up|down for one item, or order[]=ids for the whole list. */
@@ -210,9 +216,9 @@ final class ItemsController extends ProjectController
         $result = $this->items->batchAssign((int) $project['id'], $plan, $this->userId(), $this->codes());
         $this->app->session->set('_batch_result.' . $project['id'], $result);
         if ($result['errors'] === []) {
-            $this->success(count($result['assigned']) . ' code(s) assigned.');
+            $this->success(plural(count($result['assigned']), 'code') . ' assigned.');
         } else {
-            $this->app->flash->warning(count($result['assigned']) . ' code(s) assigned, ' . count($result['errors']) . ' could not be.', 'See the list below.');
+            $this->app->flash->warning(plural(count($result['assigned']), 'code') . ' assigned, ' . count($result['errors']) . ' could not be.', 'See the list below.');
         }
         return $this->finish($request, $this->projectUrl((int) $project['id'], '/batch/done'));
     }

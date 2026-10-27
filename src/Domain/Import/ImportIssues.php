@@ -43,7 +43,7 @@ final class ImportIssues
         $total = (int) $this->db->value("SELECT COUNT(*) FROM chroma_import_issues i $where", $params);
         $rows = $this->db->all(
             "SELECT i.*, u.display_name AS resolved_by_name FROM chroma_import_issues i LEFT JOIN chroma_users u ON u.id = i.resolved_by
-             $where ORDER BY i.status = 'open' DESC, i.id DESC LIMIT " . (int) $limit . ' OFFSET ' . (int) $offset,
+             $where ORDER BY i.status = 'open' DESC, i.id LIMIT " . (int) $limit . ' OFFSET ' . (int) $offset,
             $params
         );
         return ['rows' => array_map([self::class, 'decorate'], $rows), 'total' => $total];

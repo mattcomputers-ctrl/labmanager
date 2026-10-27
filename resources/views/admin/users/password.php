@@ -7,7 +7,7 @@
 ]) ?>
 <div class="page-narrow">
   <div class="card"><div class="card-body">
-    <form method="post" action="/admin/users/<?= (int) $user['id'] ?>/password" x-data="{ mode: '<?= e(old('password_mode', 'generate')) ?>' }">
+    <form method="post" action="/admin/users/<?= (int) $user['id'] ?>/password" x-data="<?= json_attr(['mode' => (string) old('password_mode', 'generate')]) ?>">
       <?= csrf_field() ?>
       <div @change="if ($event.target.name === 'password_mode') mode = $event.target.value">
       <?= component('form/field', ['name' => 'password_mode', 'type' => 'radio', 'label' => 'Temporary password', 'value' => old('password_mode', 'generate'), 'options' => [

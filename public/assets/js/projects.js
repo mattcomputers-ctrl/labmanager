@@ -24,8 +24,11 @@
 
     /* Column chooser for the Expert projects list (remembered per browser). */
     Alpine.data('columnChooser', function (cfg) {
+      /* A column with narrow:false starts hidden on a tablet-width screen (under 1024px) so the important columns fit;
+         the chooser (remembered per browser) can switch it back on. */
+      var narrow = window.innerWidth < 1024;
       var defaults = {};
-      (cfg.columns || []).forEach(function (c) { defaults[c.key] = c.on !== false; });
+      (cfg.columns || []).forEach(function (c) { defaults[c.key] = c.on !== false && !(narrow && c.narrow === false); });
       return {
         open: false,
         columns: cfg.columns || [],
@@ -59,19 +62,21 @@
         },
         remove: function (i) { this.rows.splice(i, 1); if (this.rows.length === 0) { this.rows.push(blank(this.kind)); } },
         lastCell: function (ev, i) {
-          /* Tab or Enter from the last cell of the last row adds a line. */
+          /* Tab or Enter from the last cell of the last row adds a line. Ctrl/Cmd+Enter is the form's own "create". */
+          if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) return;
+          if (ev.key === 'Enter') { this.enterNext(ev, i); return; }
           if (i !== this.rows.length - 1) return;
-          if ((ev.key === 'Tab' && !ev.shiftKey) || ev.key === 'Enter') {
+          if (ev.key === 'Tab' && !ev.shiftKey) {
             if (this.full) return;
             ev.preventDefault();
             this.add(true);
           }
         },
         enterNext: function (ev, i) {
-          /* Enter in the description cell moves to (or creates) the next row. */
-          if (ev.key !== 'Enter') return;
+          /* Enter in any grid cell moves to (or creates) the next row instead of submitting the form; Ctrl/Cmd+Enter creates the project. */
+          if (ev.key !== 'Enter' || ev.ctrlKey || ev.metaKey) return;
           ev.preventDefault();
-          if (i === this.rows.length - 1) { this.add(true); return; }
+          if (i === this.rows.length - 1) { if (this.full) return; this.add(true); return; }
           var el = this.$root.querySelector('[data-row="' + (i + 1) + '"] [data-first]'); if (el) el.focus();
         },
         paste: function (ev, i) {
@@ -89,7 +94,7 @@
             self.rows[idx].description = line;
             added++;
           });
-          if (skipped) { window.chroma.toast('warning', skipped + ' line(s) were not added: the limit is ' + this.cap + ' items per project.'); }
+          if (skipped) { window.chroma.toast('warning', skipped + (skipped === 1 ? ' line was' : ' lines were') + ' not added: the limit is ' + this.cap + ' items per project.'); }
           else { window.chroma.toast('success', added + ' lines pasted.'); }
         },
         pickExisting: function (i, item) {
@@ -104,17 +109,22 @@
     Alpine.data('projectHeader', function (cfg) {
       var values = {}, display = {};
       (cfg.fields || []).forEach(function (f) { values[f.name] = f.value === null || f.value === undefined ? '' : f.value; display[f.name] = f.display || ''; });
+      /* The title is edited like a field but is not in cfg.fields: seed it, or an emptied title is undefined, dropped from the JSON and silently "saved". */
+      values.title = cfg.title || ''; display.title = cfg.title || '';
       return {
         url: cfg.url,
         editing: null,
         busy: false,
         values: values,
         display: display,
+        error: {},
         start: function (name) {
           if (!cfg.canEdit) return;
           this.editing = name;
+          this.error = {};
           var self = this;
-          this.$nextTick(function () { var el = document.querySelector('[data-edit="' + name + '"] input, [data-edit="' + name + '"] textarea, [data-edit="' + name + '"] select'); if (el) { el.focus(); if (el.select && el.type !== 'checkbox') el.select(); } });
+          /* Lookup editors start with hidden inputs: skip those or focus() is a no-op and typing goes nowhere. */
+          this.$nextTick(function () { var el = document.querySelector('[data-edit="' + name + '"] input:not([type=hidden]), [data-edit="' + name + '"] textarea, [data-edit="' + name + '"] select'); if (el) { el.focus(); if (el.select && el.type !== 'checkbox') el.select(); } });
         },
         cancel: function () { this.editing = null; },
         save: function (name, extra) {
@@ -134,7 +144,10 @@
             window.chroma.toast('success', 'Saved');
           }).catch(function (err) {
             self.busy = false;
-            window.chroma.toast('error', err.message || 'Could not save');
+            /* Show the real reason under the field (the server's generic message says "highlighted fields", so highlight one). */
+            var msg = (err.errors && (err.errors[name] || err.errors[Object.keys(err.errors)[0]])) || err.message || 'Could not save';
+            self.error[name] = msg;
+            window.chroma.toast('error', msg);
           });
         },
         lookupChosen: function (ev, name) {
@@ -206,23 +219,37 @@
       return compose(batchSelect(cfg), itemsOrder(cfg));
     });
 
-    /* Batch review page: prefix per row, defaulting to the row above; suffix options follow the prefix. */
+    /* Batch review page: prefix and suffix per row, defaulting to the row above; suffix options follow the prefix. */
     Alpine.data('batchForm', function (cfg) {
       var state = {};
       (cfg.rows || []).forEach(function (r) { state[r.id] = { internal: r.internal, sell: r.sell, prefix: r.prefix ? String(r.prefix) : '', suffix: '', touched: false }; });
+      var allows = function (prefix, suffix) {
+        if (!suffix) return true;
+        return ((cfg.prefixSuffixes && cfg.prefixSuffixes[prefix]) || []).some(function (s) { return String(s.id) === String(suffix); });
+      };
       return {
         rows: cfg.rows || [],
         r: state,
         suffixes: function (id) { var p = this.r[id].prefix; return (cfg.prefixSuffixes && cfg.prefixSuffixes[p]) || []; },
-        prefixChanged: function (id) {
-          /* Rows below that have not been set by hand take this prefix. */
-          this.r[id].touched = true;
-          var found = false, self = this;
+        /* Copy this row's prefix and suffix to the rows below that have not been set by hand. */
+        fillDown: function (id, withPrefix) {
+          var found = false, self = this, src = this.r[id];
           this.rows.forEach(function (row) {
             if (row.id === id) { found = true; return; }
-            if (found && !self.r[row.id].touched) { self.r[row.id].prefix = self.r[id].prefix; self.r[row.id].suffix = ''; }
+            var t = self.r[row.id];
+            if (!found || t.touched) return;
+            if (withPrefix) { t.prefix = src.prefix; t.suffix = src.suffix; }
+            else if (t.prefix === src.prefix) { t.suffix = src.suffix; }
           });
-          this.r[id].suffix = '';
+        },
+        prefixChanged: function (id) {
+          this.r[id].touched = true;
+          if (!allows(this.r[id].prefix, this.r[id].suffix)) { this.r[id].suffix = ''; }
+          this.fillDown(id, true);
+        },
+        suffixChanged: function (id) {
+          this.r[id].touched = true;
+          this.fillDown(id, false);
         },
         setAll: function (what, on) { var self = this; this.rows.forEach(function (row) { if (what === 'internal' && row.canInternal) self.r[row.id].internal = on; if (what === 'sell' && row.canSell) self.r[row.id].sell = on; }); },
         get count() { var n = 0, self = this; this.rows.forEach(function (row) { if (self.r[row.id].internal) n++; if (self.r[row.id].sell) n++; }); return n; },
@@ -256,15 +283,25 @@
     }
     Alpine.data('itemsOrder', itemsOrder);
 
-    /* Status select on an item row: saves via fetch and reloads so the progress bar and project status stay right. */
+    /* Status select on an item row: saves via fetch, says so in a toast, highlights the row and updates the progress box
+       in place. Only when the change completes the project does the page reload (its header and buttons change). */
     Alpine.data('itemStatus', function (cfg) {
       return {
         busy: false,
         change: function (ev) {
-          var self = this; this.busy = true;
-          window.chroma.post(cfg.url, { status_id: ev.target.value }).then(function (res) {
-            location.reload();
-          }).catch(function (err) { self.busy = false; window.chroma.toast('error', err.message); ev.target.value = cfg.current; });
+          var self = this, select = ev.target, label = select.options[select.selectedIndex] ? select.options[select.selectedIndex].text : '';
+          this.busy = true;
+          window.chroma.post(cfg.url, { status_id: select.value }).then(function (res) {
+            if (res.completed || (res.project_status && res.project_status !== 'open')) { location.reload(); return; }
+            self.busy = false; cfg.current = select.value;
+            window.chroma.toast('success', res.message || ('"' + (cfg.description || 'Item') + '" is now ' + label.toLowerCase() + '.'), res.detail || null);
+            var row = select.closest('tr'); if (row) { row.classList.add('row-flash'); setTimeout(function () { row.classList.remove('row-flash'); }, 1600); }
+            if (res.progress) {
+              var bar = document.querySelector('.project-side .progress-big span'); if (bar) bar.style.width = res.progress.pct + '%';
+              var pb = document.querySelector('.project-side .progress-big'); if (pb) pb.setAttribute('aria-valuenow', res.progress.done);
+              var txt = document.querySelector('.project-side .progress-label'); if (txt) txt.textContent = res.progress.label;
+            }
+          }).catch(function (err) { self.busy = false; window.chroma.toast('error', err.message); select.value = cfg.current; });
         }
       };
     });

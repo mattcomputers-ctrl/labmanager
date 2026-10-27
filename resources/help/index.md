@@ -21,4 +21,4 @@ Your choice is remembered. You can switch at any point.
 
 ## Need more?
 
-Each page has short hints under the fields and a **?** you can press for a one-paragraph explanation. Pick a topic on the left for a longer walkthrough.
+Each page has short hints under the fields and a **?** you can press for a one-paragraph explanation. Pick a topic from the Help topics list (above on a phone, beside this page on a bigger screen) for a longer walkthrough. Help is also in the main menu on every page.

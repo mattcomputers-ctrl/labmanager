@@ -142,6 +142,8 @@ final class Items
             $ids = $this->insertNormalized($projectId, $rows, $actorId);
             $item = $this->get($ids[0]);
             $this->activity->system($projectId, 'item_added', mb_convert_case((string) $type['item_label_singular'], MB_CASE_TITLE) . ' added: ' . $item['description'], $actorId, (int) $item['id']);
+            // An item added with a "done" status (e.g. an existing product already matched) can complete the project.
+            $this->projects()->autoComplete($projectId, $actorId);
             return $item;
         });
     }
@@ -581,6 +583,8 @@ final class Items
             foreach ($ids as $i => $id) {
                 $db->update('chroma_project_items', ['sequence' => $i + 1], ['id' => $id]);
             }
+            // Removing the last unfinished item leaves only done ones: the project completes itself, as the page promises.
+            $this->projects()->autoComplete((int) $item['project_id'], $actorId);
         });
     }
 
@@ -682,7 +686,7 @@ final class Items
             throw ValidationException::general('Nothing was selected. Tick E number or sell number on at least one item.');
         }
         if ($assigned) {
-            $this->audit->record('item.batch_assign', 'chroma_projects', $projectId, null, ['assigned' => $assigned, 'errors' => $errors], count($assigned) . ' code(s) assigned in a batch', $actorId);
+            $this->audit->record('item.batch_assign', 'chroma_projects', $projectId, null, ['assigned' => $assigned, 'errors' => $errors], count($assigned) . (count($assigned) === 1 ? ' code' : ' codes') . ' assigned in a batch', $actorId);
         }
         return ['assigned' => $assigned, 'errors' => $errors];
     }

@@ -131,19 +131,21 @@ final class Projects
     public function progress(int $projectId, ?string $typeCode = null): array
     {
         $r = $this->db->one(
-            'SELECT COUNT(*) AS total, COALESCE(SUM(s.is_done = 1), 0) AS done
+            'SELECT COUNT(*) AS total, COALESCE(SUM(s.is_done = 1), 0) AS done, COALESCE(SUM(s.is_done = 1 AND s.is_success = 1), 0) AS matched
              FROM chroma_project_items i LEFT JOIN chroma_item_statuses s ON s.id = i.status_id WHERE i.project_id = ?',
             [$projectId]
         );
         $total = (int) ($r['total'] ?? 0);
         $done = (int) ($r['done'] ?? 0);
+        $matched = (int) ($r['matched'] ?? 0);
         $word = self::progressWord($typeCode);
         return [
             'total' => $total,
             'done' => $done,
+            'matched' => $matched,
             'pct' => $total > 0 ? (int) round($done / $total * 100) : 0,
             'word' => $word,
-            'label' => $done . ' of ' . $total . ' ' . $word,
+            'label' => self::progressLabel($done, $total, $matched, $typeCode),
         ];
     }
 
@@ -151,6 +153,19 @@ final class Projects
     public static function progressWord(?string $typeCode): string
     {
         return $typeCode === 'color_match' ? 'matched' : 'done';
+    }
+
+    /**
+     * The progress text. "Done" covers matched, approved, rejected and not needed, so a color match only says
+     * "matched" when every finished color really was matched; otherwise "3 of 3 done (2 matched)".
+     */
+    public static function progressLabel(int $done, int $total, int $matched, ?string $typeCode): string
+    {
+        $word = self::progressWord($typeCode);
+        if ($word === 'matched' && $done > $matched) {
+            return $done . ' of ' . $total . ' done (' . plural($matched, 'matched', 'matched') . ')';
+        }
+        return $done . ' of ' . $total . ' ' . $word;
     }
 
     /** Team member rows (user id + name). @return list<array<string,mixed>> */
@@ -177,7 +192,8 @@ final class Projects
                     pt.code AS type_code, pt.label AS type_label, pt.color AS type_color, pt.item_label,
                     c.name AS customer_name, u.display_name AS tech_name, st.label AS stage_label,
                     (SELECT COUNT(*) FROM chroma_project_items i WHERE i.project_id = p.id) AS item_count,
-                    (SELECT COUNT(*) FROM chroma_project_items i JOIN chroma_item_statuses s ON s.id = i.status_id WHERE i.project_id = p.id AND s.is_done = 1) AS items_done
+                    (SELECT COUNT(*) FROM chroma_project_items i JOIN chroma_item_statuses s ON s.id = i.status_id WHERE i.project_id = p.id AND s.is_done = 1) AS items_done,
+                    (SELECT COUNT(*) FROM chroma_project_items i JOIN chroma_item_statuses s ON s.id = i.status_id WHERE i.project_id = p.id AND s.is_done = 1 AND s.is_success = 1) AS items_matched
              FROM chroma_projects p
              JOIN chroma_project_types pt ON pt.id = p.project_type_id
              LEFT JOIN chroma_customers c ON c.id = p.customer_id
@@ -191,7 +207,7 @@ final class Projects
         foreach ($rows as &$r) {
             $r['summary'] = self::summary($r);
             $r['pct'] = (int) $r['item_count'] > 0 ? (int) round((int) $r['items_done'] / (int) $r['item_count'] * 100) : 0;
-            $r['progress_label'] = (int) $r['items_done'] . ' of ' . (int) $r['item_count'] . ' ' . self::progressWord($r['type_code']);
+            $r['progress_label'] = self::progressLabel((int) $r['items_done'], (int) $r['item_count'], (int) $r['items_matched'], $r['type_code']);
         }
         unset($r);
         return ['rows' => $rows, 'total' => $total];

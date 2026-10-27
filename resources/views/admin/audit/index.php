@@ -14,7 +14,7 @@ $dateFmt = is_easy() ? 'M j, Y g:i a' : 'Y-m-d H:i:s';
   <div class="filters">
     <label class="sr-only" for="fa-user">Who</label>
     <select id="fa-user" name="user" aria-label="Who"><option value="">Anyone</option><?php foreach ($users as $u): ?><option value="<?= (int) $u['id'] ?>"<?= $filters['user'] === (int) $u['id'] ? ' selected' : '' ?>><?= e($u['name']) ?></option><?php endforeach; ?></select>
-    <select name="action" aria-label="Action"><option value="">Any action</option><?php foreach ($actions as $a): ?><option value="<?= e($a) ?>"<?= $filters['action'] === $a ? ' selected' : '' ?>><?= e($a) ?></option><?php endforeach; ?></select>
+    <select name="action" aria-label="Action"><option value="">Any action</option><?php foreach ($actions as $a): ?><option value="<?= e($a) ?>"<?= $filters['action'] === $a ? ' selected' : '' ?>><?= e(isset(\Chroma\Domain\Codes\CodeDetails::ACTIONS[$a]) ? \Chroma\Domain\Codes\CodeDetails::ACTIONS[$a] . ' (' . $a . ')' : $a) ?></option><?php endforeach; ?></select>
     <select name="table" aria-label="Table"><option value="">Any table</option><?php foreach ($tables as $t): ?><option value="<?= e($t) ?>"<?= $filters['table'] === $t ? ' selected' : '' ?>><?= e(str_replace('chroma_', '', $t)) ?></option><?php endforeach; ?></select>
     <input type="date" name="from" value="<?= e($filters['from']) ?>" aria-label="From date" title="From date">
     <input type="date" name="to" value="<?= e($filters['to']) ?>" aria-label="To date" title="To date">
@@ -33,7 +33,7 @@ $dateFmt = is_easy() ? 'M j, Y g:i a' : 'Y-m-d H:i:s';
     <tr class="audit-row">
       <td class="nowrap audit-when" data-label="When"><?= e(fmt_datetime($r['created_at'], $dateFmt)) ?><?php if (is_easy()): ?><br><span class="muted small"><?= e(fmt_ago($r['created_at'])) ?></span><?php endif; ?></td>
       <td class="audit-who" data-label="Who"><?= e($r['user_name'] !== '' ? $r['user_name'] : 'system') ?></td>
-      <td class="audit-what" data-label="What"><span class="audit-action"><?= e($r['action']) ?></span><?php if ($r['note'] !== ''): ?><br><span class="small"><?= e($r['note']) ?></span><?php endif; ?><?php if (is_easy() && $r['table_name'] !== ''): ?><br><span class="muted small"><?= e(str_replace('chroma_', '', $r['table_name'])) ?><?= $r['row_id'] !== null ? ' #' . (int) $r['row_id'] : '' ?></span><?php endif; ?></td>
+      <td class="audit-what" data-label="What"><span class="audit-action" title="<?= e($r['action']) ?>"><?= e(\Chroma\Domain\Codes\CodeDetails::ACTIONS[$r['action']] ?? $r['action']) ?></span><?php if ($r['note'] !== ''): ?><br><span class="small"><?= e($r['note']) ?></span><?php endif; ?><?php if (is_easy() && $r['table_name'] !== ''): ?><br><span class="muted small"><?= e(str_replace('chroma_', '', $r['table_name'])) ?><?= $r['row_id'] !== null ? ' #' . (int) $r['row_id'] : '' ?></span><?php endif; ?></td>
       <?php if (is_expert()): ?><td class="nowrap audit-table-row" data-label="Table / row"><?= e(str_replace('chroma_', '', $r['table_name'])) ?><?= $r['row_id'] !== null ? ' #' . (int) $r['row_id'] : '' ?></td><td class="nowrap small muted audit-ip" data-label="IP"><?= e($r['ip']) ?></td><?php endif; ?>
       <td class="audit-change" data-label="Change">
         <?php if (!$r['diff']): ?><span class="muted">—</span>

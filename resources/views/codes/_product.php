@@ -3,6 +3,7 @@
 $i = $product['internal'];
 $sells = $product['sells'];
 $showAssignedBy = is_expert();
+$visibility = new \Chroma\Domain\Projects\Visibility(app()->db, app()->auth);
 ?>
 <article class="card product-card<?= $product['voided'] ? ' is-void' : '' ?>">
   <div class="product-head">
@@ -50,7 +51,7 @@ $showAssignedBy = is_expert();
   <?php if ($product['origins']): ?>
   <div class="product-origin">
     <span>From</span>
-    <?php foreach ($product['origins'] as $o): $hidden = (int) $o['confidential'] === 1 && !can('projects.view_confidential'); ?>
+    <?php foreach ($product['origins'] as $o): $hidden = !$visibility->canViewOrigin($o); ?>
       <?php if ($hidden): ?><span>a confidential project</span><?php else: ?>
       <a href="/projects/<?= (int) $o['project_id'] ?>">Project <?= (int) $o['project_number'] ?><?= $o['project_title'] ? ' · ' . e($o['project_title']) : '' ?></a><?= $o['item_description'] ? ' <span class="muted">(item ' . (int) $o['sequence'] . ': ' . e($o['item_description']) . ')</span>' : '' ?>
       <?php endif; ?>

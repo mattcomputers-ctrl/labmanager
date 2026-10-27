@@ -195,6 +195,23 @@ final class PublicApiTest extends TestCase
         $this->assertSame(404, $status);
         $this->assertStringContainsString('No sell number matches', $body['error']);
 
+        // Historical spellings resolve the way the lookup page resolves them: UVV185 is UVVL185, and the spelling kept in legacy_text counts too.
+        $this->codes->manualSell('UVVL185', ['description' => 'Inherited UV varnish', 'legacy_text' => 'UVV185'], $this->adminId);
+        $this->codes->manualSell('UVVL184', ['description' => 'Inherited UV varnish 184', 'legacy_text' => 'UVV-184'], $this->adminId);
+        foreach (['UVV185', 'uvv185', 'UVV-185', 'UVVL185'] as $spelling) {
+            [$status, $body] = $this->call('sell', '/api/v1/codes/sell/x', [], ['code' => $spelling]);
+            $this->assertSame(200, $status, $spelling);
+            $this->assertSame('UVVL185', $body['data']['sell_number'], $spelling);
+        }
+        [$status, $body] = $this->call('sell', '/api/v1/codes/sell/x', [], ['code' => 'UVV-184']);
+        $this->assertSame(200, $status);
+        $this->assertSame('UVVL184', $body['data']['sell_number']);
+        foreach (['UVV185', 'UVV-184'] as $spelling) {
+            [$status, $body] = $this->call('codes', '/api/v1/codes', ['q' => $spelling]);
+            $this->assertSame(200, $status, $spelling);
+            $this->assertSame(1, $body['total'], "search for $spelling");
+        }
+
         foreach (['E6374-10', '6374-10', 'e6374-10'] as $spelling) {
             [$status, $body] = $this->call('internal', '/api/v1/codes/internal/x', [], ['code' => $spelling]);
             $this->assertSame(200, $status, $spelling);

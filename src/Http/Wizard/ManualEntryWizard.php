@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace Chroma\Http\Wizard;
 
+use Chroma\Http\Tips;
 use Chroma\Core\Permissions;
 use Chroma\Core\Request;
 use Chroma\Domain\Codes\CodeAssigner;
@@ -74,7 +75,7 @@ final class ManualEntryWizard extends Wizard
         $fields = [];
         if ($type === 'sell') {
             $fields[] = ['name' => 'internal', 'type' => 'lookup', 'label' => 'E number it belongs to', 'optional_text' => true, 'lookup' => '/api/codes/search?q=', 'placeholder' => 'E number or another sell number of the product', 'help' => 'Leave blank if the formula has no E number yet.'];
-            $fields[] = ['name' => 'reason', 'type' => 'select', 'label' => 'Reason', 'optional_text' => true, 'placeholder' => 'No particular reason', 'options' => array_map(fn($k, $v) => [$k, $v], array_keys(CodeAssigner::REASONS), CodeAssigner::REASONS), 'attrs' => ['x-model' => 'reason']];
+            $fields[] = ['name' => 'reason', 'type' => 'select', 'label' => 'Reason', 'optional_text' => true, 'tip' => Tips::REASON, 'placeholder' => 'No particular reason', 'options' => array_map(fn($k, $v) => [$k, $v], array_keys(CodeAssigner::REASONS), CodeAssigner::REASONS), 'attrs' => ['x-model' => 'reason']];
             $fields[] = ['name' => 'reason_text', 'label' => 'Say why', 'required' => true, 'required_message' => 'Say in a few words why this code is needed.', 'maxlength' => 500, 'placeholder' => 'A few words on why this code is needed', 'help' => 'Needed when the reason is "Other". It is kept with the code.', 'show_when' => "reason === 'other'"];
         } else {
             $fields[] = ['name' => 'resale', 'type' => 'checkbox', 'label' => 'Purchased for resale', 'help' => 'Tick if this is bought in rather than made here.'];

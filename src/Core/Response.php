@@ -5,8 +5,26 @@ namespace Chroma\Core;
 
 final class Response
 {
+    /**
+     * Hardening headers every response carries unless a caller overrides one
+     * (Response::header() replaces the default). Pages are never framed by
+     * another site, browsers never guess content types, the referrer stays
+     * inside the app, and the CSP keeps scripts, styles, fonts, images and
+     * fetches on this origin. Inline scripts/styles and eval stay allowed
+     * because the templates use inline handlers and Alpine needs eval.
+     * nginx repeats the first three for the static files it serves itself
+     * (deploy/nginx/chroma.conf).
+     */
+    public const SECURITY_HEADERS = [
+        'X-Frame-Options' => 'DENY',
+        'X-Content-Type-Options' => 'nosniff',
+        'Referrer-Policy' => 'same-origin',
+        'Content-Security-Policy' => "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; "
+            . "img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'self'; object-src 'none'",
+    ];
+
     /** @var array<string,string> */
-    private array $headers = [];
+    private array $headers = self::SECURITY_HEADERS;
 
     public function __construct(
         private string $body = '',

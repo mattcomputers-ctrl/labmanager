@@ -184,11 +184,17 @@ final class ProjectsTest extends TestCase
         $items->setStatus((int) $rows[0]['id'], $matched, $this->adminId);
         $items->setStatus((int) $rows[1]['id'], $matched, $this->adminId);
         $prog = $this->projects->progress((int) $p['id'], 'color_match');
-        $this->assertSame(['total' => 3, 'done' => 2, 'pct' => 67, 'word' => 'matched', 'label' => '2 of 3 matched'], $prog);
+        $this->assertSame(['total' => 3, 'done' => 2, 'matched' => 2, 'pct' => 67, 'word' => 'matched', 'label' => '2 of 3 matched'], $prog);
         $this->assertSame('open', $this->projects->get((int) $p['id'])['status']);
         $items->setStatus((int) $rows[2]['id'], $notNeeded, $this->adminId);
         $done = $this->projects->get((int) $p['id']);
         $this->assertSame('completed', $done['status']);
+        // "Not needed" is done but not matched, so the label stops claiming three matches.
+        $this->assertSame('3 of 3 done (2 matched)', $done['progress']['label']);
+        $listed = $this->projects->list(['status' => 'completed'], new Visibility($this->db, $this->app->auth), 50, 0)['rows'];
+        $this->assertSame('3 of 3 done (2 matched)', array_values(array_filter($listed, fn($r) => (int) $r['id'] === (int) $p['id']))[0]['progress_label']);
+        $this->assertSame('1 of 2 done', Projects::progressLabel(1, 2, 1, 'rnd'));
+        $this->assertSame('0 of 2 matched', Projects::progressLabel(0, 2, 0, 'color_match'));
         $this->assertSame(today(), $done['date_completed']);
         $this->assertSame(1, (int) $this->db->value('SELECT COUNT(*) FROM chroma_project_activity WHERE project_id = ? AND kind = "completed"', [$p['id']]));
 

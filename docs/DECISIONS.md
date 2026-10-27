@@ -23,6 +23,12 @@ Choices made while building Chroma where the spec said "decide" or left room, gr
 16. **Fulltext searches leave out words InnoDB does not index** (shorter than three characters, such as `UV`, and stopwords such as `for`); requiring them would return nothing.
 17. **Routes may require any one of several permissions** (`->anyPermission(...)`), used where either assign permission unlocks a page.
 18. **Dev and test scratch files are per user** (`/tmp/chroma-test-<uid>`), so a suite run as root never blocks the updater's run as the `chroma` user.
+19. **Seeded groups are a little wider than the spec's one-line list.** `Sales` also holds `codes.export` so sales staff can download the cross-reference they used to keep as a spreadsheet, and `Read only` holds `reports.view` so a read-only login can open the reports page. Both are seed defaults only: an administrator can untick either on the Groups screen and the seeder never adds a permission back to a group that exists.
+19. **Every response carries hardening headers** (`Response::SECURITY_HEADERS`): `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin` and a Content-Security-Policy that keeps scripts, styles, fonts, images and fetches on this origin and forbids framing (`frame-ancestors 'none'`), off-site form posts and `<base>` changes. Inline scripts/styles and `eval` stay allowed because the templates use inline handlers and the vendored Alpine build needs eval; a nonce-based policy can follow once Alpine's CSP build is vendored. nginx repeats the first three on `/assets/`. A caller can still override a header with `Response::header()`.
+20. **Help is in the main menu, not only behind the avatar**, and the topic list is in reading order (getting around, projects, codes, quick assign, reports) with the admin topics shown only to people holding an admin permission. Titles lose their "Help:" prefix in the list. Every Easy-mode wizard has a "?" in its progress bar that opens the matching help page in a new tab (`Wizard::helpSlug()`).
+21. **"?" explanations live in one place.** `src/Http/Tips.php` holds the one-paragraph texts for the prefix, suffix, reason, next-number and digital-match fields so the Expert form and the wizard step say the same thing; the confidential explanation sits in the project-type field catalogue next to its helper text. The `form/field` component shows a tip on checkbox labels too.
+22. **Toasts do not stack identical messages**: an identical success/info toast that is still showing has its timer restarted instead of being added again; plain successes stay 2.5 s, errors 9 s, everything else 5 s.
+23. **Phone navigation**: the hamburger panel closes on a tap outside it, on the dimmed backdrop, on a link, or when the account menu opens (and vice versa), and it carries the search box that the top bar hides on phones.
 
 
 ## Module D decisions — code lookup, logs, code pages, quick assign, void, link, manual entry
@@ -187,6 +193,8 @@ Choices made while building Chroma where the spec said "decide" or left room, gr
 18. **Phone layout for the list editors**: tables marked `table-stack` (lists, stages, item statuses) render each row as a small
     card below 640px with the column name in front of each value, so the status and the Edit/Deactivate buttons are never hidden
     behind a horizontal scroll. Desktop and tablet layouts are unchanged.
+19. **The Admin landing page needs an admin permission** (`anyPermission(Permissions::adminKeys())`), so a Lab, Sales or Read-only user who types `/admin` gets the standard "You can't open this" page instead of an empty tile grid.
+20. **A generated temporary password never breaks inside a word** on a phone: the big code display breaks only at hyphens (or anywhere as a last resort for a code that cannot fit at all) and uses 22px mono below 480px so `Word-Word-Word-NN` fits on one line. The sign-in address on that screen comes from `APP_URL` in the config, which the installer sets to the server's address.
 
 
 ## Decisions — Module B, legacy spreadsheet importer
@@ -248,6 +256,19 @@ Choices made where SPEC.md §2.3 / §5 left room. Newest at the bottom.
 21. **Alpine components are composed with property descriptors, not `Object.assign`**, so getters such as `full` (items grid cap) and `allOn` (select-all) stay live. `itemsGrid` now owns `type`/`meta` on the Expert new-project page; `itemsSection` = `batchSelect` + `itemsOrder` on the project page.
 22. **Easy list on a phone is a card stack** (CSS only, `data-label` per cell, under 640px); Expert keeps the dense table with sideways scroll by design. Easy item rows always show "Proofs: Y (n)" or "Proofs: N".
 23. **Export has no silent cap**: the controller pages through `list()` in chunks of 1000 until every matching project is in the file.
+
+### Usability pass (round 3)
+
+24. **Bulk actions stay on the project page.** SPEC §5 lists "bulk actions" for Expert lists; the only bulk operation the lab has is assigning codes to several colors at once, so multi-select lives on the project's items table (batch assign) and the projects list offers filters, a column chooser and whole-list exports instead. Code lookup and the per-prefix logs are read-only lists whose "bulk" need is covered by the CSV/XLSX export of the filtered list. Revisit if a real bulk need appears (e.g. completing several projects).
+25. **Flipping Easy/Expert mid-task keeps the typed values in both directions.** Inside a wizard the Expert link posts the current step with `_mode=expert`; `WizardController::submitStep` stores the half-filled answers (no validation, like Back) and redirects to `expertUrl(state)`. On an Expert page whose form carries `data-mode-carry="/wizard/<key>"` the Easy link serialises the form's fields into the wizard's start URL with `jump=1`; `initialState()` reads the same field names the Expert form posts (new project: every header field plus `items[n][…]`; quick assign: product, want, prefix, description, reason …) and `start()` lands on the first step that is still missing an answer (or the review). A wizard's Easy link never carries `expert=1`.
+26. **The wizard's primary button says what it does.** Steps with an "add another?" radio bind the label to the answer ("Next: color 2 ›" / "Review ›", `Step::$nextLabelBy`); the type step always says "Next ›" because more steps follow once a type is picked.
+27. **One primary action on the project page.** "Mark completed" is secondary until every color/item is done (the project completes itself then anyway); "Cancel project" sits under a "More" menu. In Easy mode the single primary is "Add color"; in Expert it is the inline "Add" row.
+28. **Progress wording is honest**: "N of M matched" only while every finished color is a match; otherwise "N of M done (K matched)" (`Projects::progressLabel`, used by the page, the list and the API). A project also completes itself when the last unfinished item is removed or an item is added already done.
+29. **Item rows repeat only what differs from the project**: ink series, substrate, coating and tech are shown on a row only when they differ from the project defaults in the header; proofs read "Proofs: none yet" / "Proofs: 2".
+30. **Confirm dialogs confirm on Enter.** The dialog's confirm control carries `autofocus` (honoured by `x-trap`) and `confirmForm.ask()` focuses the control inside *its own* teleported dialog (`data-confirm-modal` = a per-render id), so pages with many confirm forms no longer leave focus on the × button; × is out of the tab order.
+31. **Attachments are checked by content**, not only by extension: HTML, SVG, PHP/JS source and `application/x-…` executables are refused whatever they are called, and an image extension must hold an image. Download still serves anything but images/PDFs as `application/octet-stream` with `nosniff`.
+32. **Enter in the Expert items grid never submits the form**: in every cell it moves to (or creates) the next line; Ctrl+Enter creates the project.
+33. **Status changes on the Expert page update in place** (toast, row highlight, progress box) and only reload when the project completed; the flash is written only for that reload, so no stale toast appears on the next page.
 
 
 ## Decisions: Reports page and read-only API (module G)

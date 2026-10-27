@@ -41,9 +41,9 @@ $batchUrl = '/projects/' . $pid . '/batch';
     <table class="table items-table<?= is_expert() ? ' table-dense' : '' ?>">
       <thead>
         <tr>
-          <?php if (is_expert() && $canAnyAssign): ?><th style="width:32px"><input type="checkbox" aria-label="Select all" :checked="allOn" @change="toggleAll($event.target.checked)"></th><?php endif; ?>
-          <th style="width:48px">#</th>
-          <th><?= e($project['item_label_singular']) ?></th>
+          <?php if (is_expert() && $canAnyAssign): ?><th class="check-col"><label class="check check-cell"><input type="checkbox" aria-label="Select all" :checked="allOn" @change="toggleAll($event.target.checked)"></label></th><?php endif; ?>
+          <th class="num-col">#</th>
+          <th class="item-desc-col"><?= e($project['item_label_singular']) ?></th>
           <?php if (is_expert()): ?>
             <th>Proofs</th><th>Digital</th>
           <?php endif; ?>
@@ -57,8 +57,8 @@ $batchUrl = '/projects/' . $pid . '/batch';
       <tbody data-items>
       <?php foreach ($items as $n => $it): $iid = (int) $it['id']; $base = '/projects/' . $pid . '/items/' . $iid; ?>
         <tr data-item-id="<?= $iid ?>" :class="{ dragover: over === <?= $iid ?> }" @dragenter.prevent="enter(<?= $iid ?>)" @dragover.prevent @drop.prevent="drop(<?= $iid ?>)" @dragend="end()">
-          <?php if (is_expert() && $canAnyAssign): ?><td><input type="checkbox" value="<?= $iid ?>" x-model="selected" aria-label="Select <?= e($it['description']) ?>"<?= ($it['internal_code_id'] !== null && $it['sell_number_id'] !== null) ? ' disabled title="Already has both codes"' : '' ?>></td><?php endif; ?>
-          <td class="num nowrap">
+          <?php if (is_expert() && $canAnyAssign): ?><td class="check-col"><label class="check check-cell"><input type="checkbox" value="<?= $iid ?>" x-model="selected" aria-label="Select <?= e($it['description']) ?>"<?= ($it['internal_code_id'] !== null && $it['sell_number_id'] !== null) ? ' disabled title="Already has both codes"' : '' ?>></label></td><?php endif; ?>
+          <td class="num nowrap" data-label="#">
             <?php if ($canItems && count($items) > 1): ?>
               <span class="drag-handle" draggable="true" @dragstart="start(<?= $iid ?>)" title="Drag to reorder" aria-hidden="true">⋮⋮</span>
               <span class="order-btns">
@@ -68,24 +68,34 @@ $batchUrl = '/projects/' . $pid . '/batch';
             <?php endif; ?>
             <span class="n"><?= (int) $it['sequence'] ?></span>
           </td>
-          <td>
-            <div class="item-desc"><?= component('chip', ['hex' => $it['hex_color'], 'title' => $it['pantone'] ?: $it['hex_color']]) ?><?= e($it['description']) ?></div>
+          <td class="item-desc-cell" data-label="<?= e($project['item_label_singular']) ?>">
+            <div class="item-desc" data-n="<?= (int) $it['sequence'] ?>"><?= component('chip', ['hex' => $it['hex_color'], 'title' => $it['pantone'] ?: $it['hex_color']]) ?><?= e($it['description']) ?></div>
             <div class="item-sub">
               <?php if ($showKind($it)): ?><?= component('badge', ['label' => $it['kind_label'], 'color' => 'gray']) ?> <?php endif; ?>
-              <?php $sub = $it['pantone'] ? ['Pantone ' . $it['pantone']] : []; ?>
+              <?php
+              // Only facts that differ from the project's own defaults (shown in the header) are repeated on the row.
+              $sub = $it['pantone'] ? ['Pantone ' . $it['pantone']] : [];
+              $differs = fn(?string $v, ?string $projectDefault) => ($v !== null && $v !== '' && mb_strtolower(trim($v)) !== mb_strtolower(trim((string) $projectDefault))) ? $v : null;
+              $facts = [
+                  $differs($it['ink_series_name'], $project['default_ink_series_name'] ?? null),
+                  $differs($it['substrate_display'], $project['default_substrate_text'] ?? null),
+                  $differs($it['coating_name'], $project['default_coating_name'] ?? null),
+              ];
+              $tech = $differs($it['tech_name'], $project['tech_name'] ?? null);
+              ?>
               <?php if (is_easy()): ?>
-                <?= e(implode(' · ', array_merge($sub, array_filter([$it['ink_series_name'], $it['substrate_display'], $it['coating_name'], (int) $it['proofs_generated'] ? 'Proofs: Y (' . (int) $it['proof_count'] . ')' : 'Proofs: N', (int) $it['is_digital_match'] ? 'Digital match' : null, $it['tech_name'] ? 'Tech: ' . $it['tech_name'] : null])))) ?>
+                <?= e(implode(' · ', array_merge($sub, array_filter(array_merge($facts, [(int) $it['proofs_generated'] && (int) $it['proof_count'] > 0 ? 'Proofs: ' . (int) $it['proof_count'] : 'Proofs: none yet', (int) $it['is_digital_match'] ? 'Digital match' : null, $tech ? 'Tech: ' . $tech : null]))))) ?>
                 <?php if ($it['notes']): ?><div class="muted small"><?= e(mb_strimwidth((string) $it['notes'], 0, 120, '…')) ?></div><?php endif; ?>
               <?php else: ?>
-                <?= e(implode(' · ', array_merge($sub, array_filter([$it['ink_series_name'], $it['substrate_display'], $it['coating_name'], $it['tech_name'] ? 'Tech: ' . $it['tech_name'] : null])))) ?>
+                <?= e(implode(' · ', array_merge($sub, array_filter(array_merge($facts, [$tech ? 'Tech: ' . $tech : null]))))) ?>
               <?php endif; ?>
             </div>
           </td>
           <?php if (is_expert()): ?>
-            <td class="nowrap"><?= (int) $it['proofs_generated'] ? 'Y · ' . (int) $it['proof_count'] : 'N' ?></td>
+            <td class="nowrap"><?= (int) $it['proofs_generated'] && (int) $it['proof_count'] > 0 ? (int) $it['proof_count'] : '<span class="muted">none</span>' ?></td>
             <td><?= (int) $it['is_digital_match'] ? '<span class="digital">Digital</span>' : '<span class="muted">—</span>' ?></td>
           <?php endif; ?>
-          <td class="nowrap">
+          <td class="nowrap" data-label="E#">
             <?php if ($it['internal_display']): ?>
               <?= component('code-pill', ['code' => $it['internal_display'], 'href' => '/codes/e/' . (int) $it['internal_code_id'], 'void' => (int) $it['internal_voided'] === 1]) ?>
             <?php elseif ($canI): ?>
@@ -102,7 +112,7 @@ $batchUrl = '/projects/' . $pid . '/batch';
               <?php endif; ?>
             <?php else: ?><span class="muted">—</span><?php endif; ?>
           </td>
-          <td class="nowrap sell-cell">
+          <td class="nowrap sell-cell" data-label="Sell number">
             <?php if ($it['sell_display']): ?>
               <?= component('code-pill', ['code' => $it['sell_display'], 'href' => '/codes/s/' . (int) $it['sell_number_id'], 'void' => (int) $it['sell_voided'] === 1, 'copy' => true]) ?>
               <?php if ($iqcHint): ?><span class="iqc">iQC standard</span><?php endif; ?>
@@ -124,9 +134,9 @@ $batchUrl = '/projects/' . $pid . '/batch';
               <?php endif; ?>
             <?php else: ?><span class="muted">—</span><?php endif; ?>
           </td>
-          <td>
+          <td data-label="Status">
             <?php if ($canItems): ?>
-              <div x-data="itemStatus(<?= json_attr(['url' => $base . '/status', 'current' => (string) $it['status_id']]) ?>)">
+              <div x-data="itemStatus(<?= json_attr(['url' => $base . '/status', 'current' => (string) $it['status_id'], 'description' => $it['description']]) ?>)">
                 <select id="st-<?= $iid ?>" class="status-select" aria-label="Status of <?= e($it['description']) ?>" @change="change($event)" :disabled="busy">
                   <?php foreach ($statuses as $s): ?><option value="<?= (int) $s['id'] ?>"<?= (int) $s['id'] === (int) $it['status_id'] ? ' selected' : '' ?>><?= e($s['label']) ?></option><?php endforeach; ?>
                 </select>
@@ -138,13 +148,13 @@ $batchUrl = '/projects/' . $pid . '/batch';
           <?php if (is_expert()): ?>
             <td class="truncate" style="max-width:160px" title="<?= e($it['notes'] ?? '') ?>"><?= e($it['notes'] ?? '') ?: '<span class="muted">—</span>' ?></td>
           <?php endif; ?>
-          <td class="right">
+          <td class="right actions-cell" data-label="Actions">
             <div class="row-actions">
               <?php if ($canItems): ?>
                 <a class="btn btn-ghost btn-sm" href="<?= e($base) ?>/edit">Edit</a>
                 <a class="btn btn-ghost btn-sm" href="<?= e($base) ?>/move" title="Move to another project">Move</a>
                 <?php if ($it['internal_code_id'] === null && $it['sell_number_id'] === null): ?>
-                  <?= component('confirm-form', ['action' => $base . '/remove', 'label' => 'Remove', 'size' => 'sm', 'title' => 'Remove "' . $it['description'] . '"?', 'body' => 'It has no codes, so it can be removed. Its notes go with it. If it is simply not needed any more, set its status to "Not needed" instead.', 'confirm_label' => 'Remove it']) ?>
+                  <?= component('confirm-form', ['action' => $base . '/remove', 'label' => 'Remove', 'size' => 'sm', 'ghost' => is_expert(), 'title' => 'Remove "' . $it['description'] . '"?', 'body' => 'It has no codes, so it can be removed. Its notes go with it. If it is simply not needed any more, set its status to "Not needed" instead.', 'confirm_label' => 'Remove it']) ?>
                 <?php endif; ?>
               <?php endif; ?>
             </div>
@@ -162,7 +172,7 @@ $batchUrl = '/projects/' . $pid . '/batch';
       <?= csrf_field() ?>
       <span class="quick-add-label">Add <?= e($singular) ?></span>
       <select name="kind" x-model="kind" aria-label="Kind"><?php foreach ($kinds as $k => $l): ?><option value="<?= e($k) ?>"><?= e($l) ?></option><?php endforeach; ?></select>
-      <input type="text" name="description" maxlength="500" class="grow" :placeholder="kind === 'existing_product' ? 'Description (fills in from the code)' : 'Description, e.g. Pantone 300 C'" aria-label="Description" :aria-invalid="!!errors.description">
+      <input type="text" name="description" maxlength="500" class="grow" :placeholder="kind === 'existing_product' ? 'Description (fills in from the code)' : (kind === 'color' ? 'Description, e.g. Pantone 300 C' : (kind === 'trial' ? 'Description, e.g. Trial 3: 2% more wax' : 'Description, e.g. Sample from the press run'))" aria-label="Description" :aria-invalid="!!errors.description">
       <template x-if="kind === 'existing_product'">
         <div class="lookup" style="flex:1 1 220px" x-data="lookup({ name: 'existing_ref', url: '/api/codes/search?q=', initialValue: '', initialLabel: '', minChars: 1 })" @click.outside="open = false">
           <input type="hidden" name="existing_ref" :value="value">

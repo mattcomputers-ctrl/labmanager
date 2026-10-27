@@ -49,3 +49,5 @@
 18. **Phone layout for the list editors**: tables marked `table-stack` (lists, stages, item statuses) render each row as a small
     card below 640px with the column name in front of each value, so the status and the Edit/Deactivate buttons are never hidden
     behind a horizontal scroll. Desktop and tablet layouts are unchanged.
+19. **The Admin landing page needs an admin permission** (`anyPermission(Permissions::adminKeys())`), so a Lab, Sales or Read-only user who types `/admin` gets the standard "You can't open this" page instead of an empty tile grid.
+20. **A generated temporary password never breaks inside a word** on a phone: the big code display breaks only at hyphens (or anywhere as a last resort for a code that cannot fit at all) and uses 22px mono below 480px so `Word-Word-Word-NN` fits on one line. The sign-in address on that screen comes from `APP_URL` in the config, which the installer sets to the server's address.

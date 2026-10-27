@@ -4,7 +4,7 @@ $view->start('head'); ?><link rel="stylesheet" href="/assets/css/codes.css"><?ph
 $back = $wizard->cancelUrl($state);
 ?>
 <div class="wizard">
-  <?= $view->partial('wizard/_progress', ['n' => $n, 'total' => $total, 'wizard' => $wizard]) ?>
+  <?= $view->partial('wizard/_progress', ['n' => $n, 'total' => $total, 'known' => $known ?? true, 'wizard' => $wizard]) ?>
   <div class="card wizard-card">
     <h1><?= e($step->title) ?></h1>
     <?php if ($step->intro): ?><p class="wizard-intro"><?= e($step->intro) ?></p><?php endif; ?>

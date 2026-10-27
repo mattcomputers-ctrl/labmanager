@@ -16,7 +16,7 @@ $defaults['resale'] = in_array($defaults['resale'], [1, '1', true], true);
 <div class="page-narrow">
   <?= component('callout', ['type' => 'warning', 'title' => 'Every manual entry is logged', 'body' => 'Chroma checks the code is not already used, writes it to the cross-reference and records that you entered it by hand. If the number is above the counter, the counter moves past it.']) ?>
   <div class="mb-4"></div>
-  <form method="post" action="/codes/manual" class="card" x-data="{ type: '<?= e($type) ?>', reason: '<?= e(old('reason', $defaults['reason'])) ?>' }" @change="if ($event.target.name === 'type') type = $event.target.value">
+  <form method="post" action="/codes/manual" class="card" x-data="<?= json_attr(['type' => $type, 'reason' => (string) old('reason', $defaults['reason'])]) ?>" @change="if ($event.target.name === 'type') type = $event.target.value">
     <?= csrf_field() ?>
     <div class="card-body">
       <?= component('form/field', ['name' => 'type', 'type' => 'radio', 'label' => 'Kind of code', 'value' => $type, 'options' => [
@@ -31,7 +31,7 @@ $defaults['resale'] = in_array($defaults['resale'], [1, '1', true], true);
       <div x-show="type === 'sell'">
         <div class="form-grid">
           <?= component('form/field', ['name' => 'internal', 'type' => 'lookup', 'label' => 'E number it belongs to', 'optional_text' => true, 'lookup' => '/api/codes/search?q=', 'value' => $defaults['internal'], 'lookup_label' => $defaults['internal_label'], 'placeholder' => 'E number or another sell number of the product', 'help' => 'Leave blank if the formula has no E number yet.']) ?>
-          <?= component('form/field', ['name' => 'reason', 'type' => 'select', 'label' => 'Reason', 'optional_text' => true, 'value' => $defaults['reason'], 'placeholder' => 'No particular reason', 'options' => array_map(fn($k, $v) => [$k, $v], array_keys($reasons), $reasons), 'attrs' => ['x-model' => 'reason']]) ?>
+          <?= component('form/field', ['name' => 'reason', 'type' => 'select', 'label' => 'Reason', 'optional_text' => true, 'tip' => \Chroma\Http\Tips::REASON, 'value' => $defaults['reason'], 'placeholder' => 'No particular reason', 'options' => array_map(fn($k, $v) => [$k, $v], array_keys($reasons), $reasons), 'attrs' => ['x-model' => 'reason']]) ?>
         </div>
         <div x-show="reason === 'other'" x-cloak>
           <?php /* required only while shown: a hidden required input would block the whole form */ ?>

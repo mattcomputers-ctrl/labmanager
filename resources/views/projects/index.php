@@ -4,15 +4,18 @@ use Chroma\Domain\Projects\Projects;
 $view->start('head'); ?><link rel="stylesheet" href="/assets/css/projects.css"><script src="/assets/js/projects.js"></script><?php $view->end();
 $newUrl = is_easy() ? '/wizard/new-project' : '/projects/new';
 $statusColor = ['open' => 'blue', 'completed' => 'green', 'cancelled' => 'gray'];
+// Column defaults: "Completed" is always "—" on the Open list, so it is off there (on for Completed / All); Target and
+// Stage are empty for most types. Under 1024px (tablet) the chooser also starts with Tech and Completed off ('narrow')
+// so Status, the list's main filter, stays on screen; the chooser can bring them back at any width.
 $columns = [
     ['key' => 'number', 'label' => 'Project #', 'on' => true],
     ['key' => 'type', 'label' => 'Type', 'on' => true],
     ['key' => 'customer', 'label' => 'Customer', 'on' => true],
     ['key' => 'title', 'label' => 'Title / description', 'on' => true],
     ['key' => 'submitted', 'label' => 'Submitted', 'on' => true],
-    ['key' => 'completed', 'label' => 'Completed', 'on' => true],
+    ['key' => 'completed', 'label' => 'Completed', 'on' => $filters['status'] !== 'open', 'narrow' => false],
     ['key' => 'target', 'label' => 'Target', 'on' => false],
-    ['key' => 'tech', 'label' => 'Tech', 'on' => true],
+    ['key' => 'tech', 'label' => 'Tech', 'on' => true, 'narrow' => false],
     ['key' => 'items', 'label' => 'Items done / total', 'on' => true],
     ['key' => 'stage', 'label' => 'Stage', 'on' => false],
     ['key' => 'status', 'label' => 'Status', 'on' => true],
@@ -62,7 +65,7 @@ unset($exportQuery['per_page']);
   <a class="btn btn-secondary btn-sm" href="<?= e(url('/projects/export', ['format' => 'xlsx'] + $exportQuery)) ?>">Export Excel</a>
   <?php endif; ?>
   <?php if (is_expert()): ?>
-  <div class="menu col-menu" @click.outside="open = false">
+  <div class="menu col-menu" @click.outside="open = false" @chroma:escape.document="open = false">
     <button type="button" class="btn btn-secondary btn-sm" @click="open = !open" :aria-expanded="open">Columns</button>
     <div class="menu-panel" x-show="open" x-cloak>
       <template x-for="c in columns" :key="c.key"><label><input type="checkbox" :checked="show(c.key)" @change="toggle(c.key)"> <span x-text="c.label"></span></label></template>
@@ -98,8 +101,8 @@ unset($exportQuery['per_page']);
         <tr class="clickable" data-href="<?= e($href) ?>">
           <td class="num" data-label="Project #" x-show="show('number')"><a class="row-link" href="<?= e($href) ?>"><?= (int) $p['project_number'] ?></a><?php if ((int) $p['confidential']): ?> <span title="Confidential" aria-label="Confidential">🔒</span><?php endif; ?></td>
           <td data-label="Type" x-show="show('type')"><?= component('badge', ['label' => $p['type_label'], 'color' => $p['type_color']]) ?></td>
-          <td data-label="Customer" x-show="show('customer')"><?= e($p['customer_name'] ?? '—') ?></td>
-          <td class="title-cell" data-label="Project" x-show="show('title')"><div class="proj-title"><?= e($p['title']) ?></div><?php if ($p['summary'] !== ''): ?><div class="proj-desc truncate"><?= e(mb_strimwidth($p['summary'], 0, is_easy() ? 90 : 140, '…')) ?></div><?php endif; ?></td>
+          <td class="customer-cell" data-label="Customer" x-show="show('customer')" title="<?= e($p['customer_name'] ?? '') ?>"><?= e($p['customer_name'] ?? '—') ?></td>
+          <td class="title-cell" data-label="Project" x-show="show('title')"><div class="proj-title truncate" title="<?= e($p['title']) ?>"><?= e($p['title']) ?></div><?php if ($p['summary'] !== ''): ?><div class="proj-desc truncate"><?= e(mb_strimwidth($p['summary'], 0, is_easy() ? 90 : 140, '…')) ?></div><?php endif; ?></td>
           <?php if (is_expert()): ?>
           <td class="nowrap" x-show="show('submitted')"><?= e(fmt_date($p['date_submitted'])) ?></td>
           <td class="nowrap" x-show="show('completed')"><?= e(fmt_date($p['date_completed'])) ?: '<span class="muted">—</span>' ?></td>

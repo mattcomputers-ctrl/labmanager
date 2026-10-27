@@ -4,7 +4,8 @@
  *   name, label, type (text|textarea|number|date|select|checkbox|radio|lookup|hidden|password|email|color|file),
  *   value, help, required (bool), options (list of [value,label] or [value,label,desc]), placeholder,
  *   error (string|null; defaults to form_errors()[name]), attrs (array), autofocus (bool), id, lookup (url for typeahead),
- *   lookup_label (initial label for lookup), allow_new (lookup), min, max, step, rows, size ('lg'), class, optional_text, prefix
+ *   lookup_label (initial label for lookup), allow_new (lookup), min, max, step, rows, size ('lg'), class, optional_text, prefix,
+ *   tip (one paragraph behind a "?" button next to the label)
  */
 $name = (string) ($name ?? '');
 $type = $type ?? 'text';
@@ -38,7 +39,7 @@ if ($type === 'hidden'): ?>
   <label class="check" for="<?= e($id) ?>">
     <input type="hidden" name="<?= e($name) ?>" value="0">
     <input type="checkbox" id="<?= e($id) ?>" name="<?= e($name) ?>" value="1"<?= ($value && $value !== '0') ? ' checked' : '' ?><?= $attrStr ?>>
-    <span class="check-text"><span><?= e($label) ?></span><?php if ($help): ?><span class="help" id="<?= e($id) ?>-help"><?= e($help) ?></span><?php endif; ?></span>
+    <span class="check-text"><span><?= e($label) ?><?php if (!empty($tip)): ?> <?= component('help-tip', ['text' => $tip]) ?><?php endif; ?></span><?php if ($help): ?><span class="help" id="<?= e($id) ?>-help"><?= e($help) ?></span><?php endif; ?></span>
   </label>
 <?php else: ?>
   <label class="label" for="<?= e($id) ?>"><?= e($label) ?><?php if ($required): ?> <span class="req" aria-hidden="true">*</span><?php elseif (!empty($optional_text)): ?> <span class="optional">(optional)</span><?php endif; ?>

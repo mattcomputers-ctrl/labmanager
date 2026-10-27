@@ -114,6 +114,15 @@ final class ProjectTypesController extends Controller
     /** The shared status list used by every type without its own. */
     public function globalStatuses(Request $request): Response
     {
+        $export = $request->str('export');
+        if ($export === 'csv' || $export === 'xlsx') {
+            $this->auth->requirePermission(\Chroma\Core\Permissions::CODES_EXPORT);
+            $rows = array_map(fn($s, $i) => [
+                'order' => $i + 1, 'label' => $s['label'], 'code' => $s['code'], 'is_done' => (int) $s['is_done'] ? 'Yes' : 'No', 'is_success' => (int) $s['is_success'] ? 'Yes' : 'No',
+                'usage_count' => (int) $s['usage_count'], 'active' => (int) $s['active'] ? 'Yes' : 'No',
+            ], $this->types->globalStatuses(), array_keys($this->types->globalStatuses()));
+            return Exporter::respond($export, 'item-statuses', ['order' => 'Order', 'label' => 'Status', 'code' => 'Code', 'is_done' => 'Finished?', 'is_success' => 'Success?', 'usage_count' => 'Items', 'active' => 'Active'], $rows);
+        }
         return $this->view('admin/project-types/statuses', [
             'title' => 'Shared item statuses',
             'statuses' => $this->types->globalStatuses(),

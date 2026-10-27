@@ -19,8 +19,23 @@ final class CodeSearch
 {
     public const MAX_EXPORT = 20000;
 
+    /**
+     * Shortest word the FULLTEXT index holds (MariaDB's innodb_ft_min_token_size,
+     * 3 unless the server was configured otherwise). Shorter words ("10", "UV",
+     * "7C") are matched as whole words on the rows the index found instead.
+     */
+    private static int $minToken = 3;
+    private static bool $minTokenLoaded = false;
+
     public function __construct(private readonly Db $db)
     {
+        if (!self::$minTokenLoaded) {
+            self::$minTokenLoaded = true;
+            $v = (int) $this->db->value('SELECT @@innodb_ft_min_token_size');
+            if ($v >= 1) {
+                self::$minToken = $v;
+            }
+        }
     }
 
     // ------------------------------------------------------------------
@@ -31,12 +46,12 @@ final class CodeSearch
      * What a search string looks like. Several readings are tried at once
      * (a code, a number, a customer, words in a description).
      *
-     * @return array{raw:string,sells:list<string>,internal:?array{number:int,version:string},digits:?int,prefix:?string,words:string,legacy:?string}
+     * @return array{raw:string,sells:list<string>,internal:?array{number:int,version:string},digits:?int,prefix:?string,words:string,short:list<string>,legacy:?string}
      */
     public static function parse(string $q): array
     {
         $raw = trim(preg_replace('/\s+/', ' ', $q) ?? $q);
-        $out = ['raw' => $raw, 'sells' => [], 'internal' => null, 'digits' => null, 'prefix' => null, 'words' => '', 'legacy' => null];
+        $out = ['raw' => $raw, 'sells' => [], 'internal' => null, 'digits' => null, 'prefix' => null, 'words' => '', 'short' => [], 'legacy' => null];
         if ($raw === '') {
             return $out;
         }
@@ -72,22 +87,62 @@ final class CodeSearch
             $out['prefix'] = strtoupper($raw);
         }
         $out['words'] = self::booleanQuery($raw);
+        $out['short'] = self::shortWords($raw);
         $out['legacy'] = mb_strlen($raw) <= 100 ? strtoupper($raw) : null;
         return $out;
     }
 
-    /** Turn free text into a safe boolean-mode fulltext query: every word required, prefix-matched. */
+    /**
+     * Turn free text into a safe boolean-mode fulltext query: every word
+     * required, prefix-matched. Words too short for the index are left out
+     * here and matched by shortWords() instead, because "+10*" would not find
+     * "test 10" but would find "test 100".
+     */
     public static function booleanQuery(string $q): string
     {
-        $words = preg_split('/[^\p{L}\p{N}]+/u', $q, -1, PREG_SPLIT_NO_EMPTY) ?: [];
         $parts = [];
-        foreach ($words as $w) {
-            if (mb_strlen($w) < 2) {
+        foreach (self::words($q) as $w) {
+            if (mb_strlen($w) < self::$minToken) {
                 continue;
             }
             $parts[] = '+' . $w . '*';
         }
         return implode(' ', $parts);
+    }
+
+    /** Words shorter than the fulltext index keeps ("10", "UV", "7C"); each must appear as a whole word. @return list<string> */
+    public static function shortWords(string $q): array
+    {
+        $out = [];
+        foreach (self::words($q) as $w) {
+            if (mb_strlen($w) < self::$minToken && !in_array($w, $out, true)) {
+                $out[] = $w;
+            }
+        }
+        return $out;
+    }
+
+    /** @return list<string> */
+    private static function words(string $q): array
+    {
+        return preg_split('/[^\p{L}\p{N}]+/u', $q, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+    }
+
+    /**
+     * SQL that requires every short word as a whole word in a description
+     * column (case-insensitive). Used together with the fulltext clause, which
+     * narrows the rows first, so the pattern match stays cheap.
+     * @param list<string> $short @return array{0:string,1:list<string>} [sql fragment starting with AND, params]
+     */
+    private static function shortWordCond(string $column, array $short): array
+    {
+        $sql = '';
+        $params = [];
+        foreach ($short as $w) {
+            $sql .= " AND $column REGEXP ?";
+            $params[] = '\\b' . preg_quote($w) . '\\b';
+        }
+        return [$sql, $params];
     }
 
     /**
@@ -146,23 +201,25 @@ final class CodeSearch
             "SELECT pk, pid, MIN(r) AS r, MIN(sortn) AS sortn FROM ($sql) t GROUP BY pk, pid ORDER BY r, sortn, pk, pid LIMIT " . $perPage . ' OFFSET ' . (($page - 1) * $perPage),
             $params
         );
-        return ['total' => $total, 'page' => $page, 'per_page' => $perPage, 'products' => $this->products($keys), 'parsed' => $parsed];
+        return ['total' => $total, 'page' => $page, 'per_page' => $perPage, 'products' => $this->products($keys, $filters), 'parsed' => $parsed];
     }
 
     /**
      * Every matching row flattened for CSV/XLSX (one row per sell number;
      * an E number without sell numbers gets a row of its own).
      * @param array{show?:string,prefix?:string} $filters
+     * @param null|callable(array<string,mixed>):bool $canSeeOrigin whether the current user may see an origin's project (confidential projects are
+     *        written as "Confidential project" without a number when not); null shows every project
      * @return list<array<string,mixed>>
      */
-    public function exportRows(string $q, array $filters = []): array
+    public function exportRows(string $q, array $filters = [], ?callable $canSeeOrigin = null): array
     {
         $rows = [];
         $page = 1;
         do {
             $res = $this->search($q, $page, 500, $filters);
             foreach ($res['products'] as $p) {
-                foreach (self::flatten($p) as $r) {
+                foreach (self::flatten($p, $canSeeOrigin) as $r) {
                     $rows[] = $r;
                 }
             }
@@ -171,11 +228,33 @@ final class CodeSearch
         return $rows;
     }
 
-    /** @param array<string,mixed> $product @return list<array<string,mixed>> */
-    public static function flatten(array $product): array
+    /**
+     * One export row per sell number. The Project column names the project a
+     * sell number was assigned on; the E number's own project is used only
+     * for the row of an E number that has no sell number, so an alias made
+     * with Quick assign exports the same "no project" its page shows.
+     * @param array<string,mixed> $product
+     * @param null|callable(array<string,mixed>):bool $canSeeOrigin see exportRows()
+     * @return list<array<string,mixed>>
+     */
+    public static function flatten(array $product, ?callable $canSeeOrigin = null): array
     {
         $i = $product['internal'];
-        $row = function (?array $s) use ($i, $product): array {
+        $projectLabel = function (?array $s) use ($i, $product, $canSeeOrigin): string {
+            $origins = array_filter($product['origins'], fn($o) => $s !== null
+                ? (int) $o['sell_number_id'] === (int) $s['id']
+                : ($i !== null && (int) $o['internal_code_id'] === (int) $i['id']));
+            $labels = [];
+            foreach ($origins as $o) {
+                $visible = $canSeeOrigin === null ? true : $canSeeOrigin($o);
+                $label = $visible ? 'Project ' . (int) $o['project_number'] : 'Confidential project';
+                if (!in_array($label, $labels, true)) {
+                    $labels[] = $label;
+                }
+            }
+            return implode('; ', $labels);
+        };
+        $row = function (?array $s) use ($i, $product, $projectLabel): array {
             return [
                 'internal_code' => $i['display'] ?? '',
                 'sell_number' => $s['display'] ?? '',
@@ -187,7 +266,7 @@ final class CodeSearch
                 'reason' => !empty($s['reason']) ? (CodeAssigner::REASONS[$s['reason']] ?? $s['reason']) : '',
                 'resale' => $i ? ((int) $i['resale'] === 1 ? 'Yes' : 'No') : '',
                 'vendor' => $i ? trim((string) ($i['vendor_name'] ?? '') . ' ' . (string) ($i['vendor_code'] ?? '')) : '',
-                'project' => implode('; ', array_map(fn($o) => 'Project ' . $o['project_number'], $product['origins'])),
+                'project' => $projectLabel($s),
                 'voided' => $s !== null && (int) $s['voided'] === 1 ? 'Voided' : ($i && (int) $i['voided'] === 1 ? ($s ? 'E number voided' : 'Voided') : ''),
             ];
         };
@@ -223,7 +302,8 @@ final class CodeSearch
         $show = $filters['show'] ?? 'all';
         $sellExtra = '';
         $intExtra = '';
-        $extraParams = [];
+        $sellExtraParams = [];
+        $intExtraParams = [];
         if ($show === 'active') {
             $sellExtra .= ' AND s.voided = 0';
             $intExtra .= ' AND i.voided = 0';
@@ -233,21 +313,22 @@ final class CodeSearch
         }
         if (!empty($filters['prefix'])) {
             $sellExtra .= ' AND s.prefix_id = (SELECT id FROM chroma_code_prefixes WHERE code = ?)';
-            $extraParams[] = strtoupper((string) $filters['prefix']);
+            $sellExtraParams[] = strtoupper((string) $filters['prefix']);
+            // An E number found by its description counts only when it has a sell number under that prefix.
+            $intExtra .= ' AND EXISTS (SELECT 1 FROM chroma_sell_numbers s2 WHERE s2.internal_code_id = i.id AND s2.prefix_id = (SELECT id FROM chroma_code_prefixes WHERE code = ?))';
+            $intExtraParams[] = strtoupper((string) $filters['prefix']);
         }
         $sellSelect = "SELECT IF(s.internal_code_id IS NULL, 'S', 'E') AS pk, COALESCE(s.internal_code_id, s.id) AS pid, %d AS r, s.number AS sortn FROM chroma_sell_numbers s WHERE %s" . $sellExtra;
         $intSelect = "SELECT 'E' AS pk, i.id AS pid, %d AS r, i.number AS sortn FROM chroma_internal_codes i WHERE %s" . $intExtra;
         $parts = [];
         $params = [];
-        $add = function (string $select, int $rank, string $cond, array $p) use (&$parts, &$params, $extraParams, $sellSelect) {
+        $add = function (string $select, int $rank, string $cond, array $p) use (&$parts, &$params, $sellExtraParams, $intExtraParams, $sellSelect) {
             $parts[] = sprintf($select, $rank, $cond);
             foreach ($p as $v) {
                 $params[] = $v;
             }
-            if ($select === $sellSelect) {
-                foreach ($extraParams as $v) {
-                    $params[] = $v;
-                }
+            foreach ($select === $sellSelect ? $sellExtraParams : $intExtraParams as $v) {
+                $params[] = $v;
             }
         };
         if (!empty($filters['prefix']) && $parsed['raw'] === '') {
@@ -261,6 +342,16 @@ final class CodeSearch
         if ($parsed['sells'] !== [] && $parsed['legacy'] !== null) {
             // The spelling as it appeared on the old sheets (legacy_text is indexed).
             $add($sellSelect, 0, 's.legacy_text = ?', [$parsed['legacy']]);
+        }
+        if ($parsed['sells'] !== [] && $this->sellExists($parsed['sells'], $parsed['legacy'])) {
+            // "Y1731", "y-1731" and "Y 1731" all mean that sell number: when it
+            // exists, the number and free-text readings would only add noise
+            // (a description containing "1731"), so every spelling gives the same list.
+            $parsed['digits'] = null;
+            $parsed['prefix'] = null;
+            $parsed['words'] = '';
+            $parsed['short'] = [];
+            $parsed['raw'] = '';
         }
         if ($parsed['internal'] !== null) {
             $n = $parsed['internal']['number'];
@@ -284,8 +375,18 @@ final class CodeSearch
             $add($intSelect, 1, 'i.legacy_internal_code = ?', [$parsed['legacy']]);
         }
         if ($parsed['words'] !== '') {
-            $add($sellSelect, 3, 'MATCH(s.description) AGAINST (? IN BOOLEAN MODE)', [$parsed['words']]);
-            $add($intSelect, 3, 'MATCH(i.description) AGAINST (? IN BOOLEAN MODE)', [$parsed['words']]);
+            [$sCond, $sP] = self::shortWordCond('s.description', $parsed['short']);
+            [$iCond, $iP] = self::shortWordCond('i.description', $parsed['short']);
+            $add($sellSelect, 3, 'MATCH(s.description) AGAINST (? IN BOOLEAN MODE)' . $sCond, array_merge([$parsed['words']], $sP));
+            $add($intSelect, 3, 'MATCH(i.description) AGAINST (? IN BOOLEAN MODE)' . $iCond, array_merge([$parsed['words']], $iP));
+        } elseif ($parsed['short'] !== []) {
+            // Every word is too short for the index ("UV 1", "2% wax"): a whole-word
+            // scan of the descriptions is the only way to answer, and the tables are
+            // small enough (thousands of rows) for it to stay quick.
+            [$sCond, $sP] = self::shortWordCond('s.description', $parsed['short']);
+            [$iCond, $iP] = self::shortWordCond('i.description', $parsed['short']);
+            $add($sellSelect, 3, '1 = 1' . $sCond, $sP);
+            $add($intSelect, 3, '1 = 1' . $iCond, $iP);
         }
         $customerIds = $this->customerIds($parsed['raw']);
         if ($customerIds !== []) {
@@ -308,6 +409,19 @@ final class CodeSearch
             '' => '',
             default => 'Assigned in Chroma',
         };
+    }
+
+    /** Is any of these spellings an existing sell number? @param list<string> $normalized */
+    private function sellExists(array $normalized, ?string $legacy): bool
+    {
+        $in = implode(',', array_fill(0, count($normalized), '?'));
+        $params = $normalized;
+        $sql = "SELECT 1 FROM chroma_sell_numbers s WHERE s.sell_number_normalized IN ($in)";
+        if ($legacy !== null) {
+            $sql .= ' OR s.legacy_text = ?';
+            $params[] = $legacy;
+        }
+        return $this->db->value($sql . ' LIMIT 1', $params) !== null;
     }
 
     /** @return list<int> */
@@ -334,9 +448,10 @@ final class CodeSearch
     /**
      * Load full product groups for a list of keys.
      * @param list<array<string,mixed>> $keys rows with pk and pid
+     * @param array{show?:string,prefix?:string} $filters with show = active|voided only sell numbers in that state are listed under a product
      * @return list<array<string,mixed>>
      */
-    public function products(array $keys): array
+    public function products(array $keys, array $filters = []): array
     {
         $eIds = [];
         $sIds = [];
@@ -352,8 +467,12 @@ final class CodeSearch
         $standalone = $sIds ? $this->sellRows('s.id IN (' . implode(',', $sIds) . ')') : [];
         $origins = $this->origins($eIds, array_merge($sIds, array_map(fn($s) => (int) $s['id'], $aliases)));
 
+        $show = $filters['show'] ?? 'all';
         $byE = [];
         foreach ($aliases as $s) {
+            if (($show === 'active' && (int) $s['voided'] === 1) || ($show === 'voided' && (int) $s['voided'] === 0)) {
+                continue;
+            }
             $byE[(int) $s['internal_code_id']][] = $s;
         }
         $out = [];
@@ -453,7 +572,7 @@ final class CodeSearch
     public function origins(array $internalIds, array $sellIds): array
     {
         $select = 'SELECT pi.id AS item_id, pi.sequence, pi.description AS item_description, pi.internal_code_id, pi.sell_number_id,
-                          p.id AS project_id, p.project_number, p.title AS project_title, p.confidential, p.status AS project_status, c.name AS project_customer
+                          p.id AS project_id, p.project_number, p.title AS project_title, p.confidential, p.assigned_user_id, p.created_by, p.status AS project_status, c.name AS project_customer
                    FROM chroma_project_items pi JOIN chroma_projects p ON p.id = pi.project_id LEFT JOIN chroma_customers c ON c.id = p.customer_id WHERE ';
         $rows = [];
         if ($internalIds !== []) {
@@ -524,11 +643,16 @@ final class CodeSearch
                     array_push($params, ...$cp);
                 } else {
                     $words = self::booleanQuery($q);
-                    if ($words === '') {
+                    $short = self::shortWords($q);
+                    if ($words === '' && $short === []) {
                         return ['prefix' => null, 'rows' => [], 'total' => 0, 'page' => $page, 'per_page' => $perPage];
                     }
-                    $conds[] = 'MATCH(i.description) AGAINST (? IN BOOLEAN MODE)';
-                    $params[] = $words;
+                    [$sc, $sp] = self::shortWordCond('i.description', $short);
+                    $conds[] = ($words !== '' ? 'MATCH(i.description) AGAINST (? IN BOOLEAN MODE)' : '1 = 1') . $sc;
+                    if ($words !== '') {
+                        $params[] = $words;
+                    }
+                    array_push($params, ...$sp);
                 }
             }
             $prefix = ['code' => 'E', 'label' => 'E numbers', 'retired' => 0];
@@ -551,11 +675,16 @@ final class CodeSearch
                     array_push($params, ...$cp);
                 } else {
                     $words = self::booleanQuery($q);
-                    if ($words === '') {
+                    $short = self::shortWords($q);
+                    if ($words === '' && $short === []) {
                         return ['prefix' => $prefix, 'rows' => [], 'total' => 0, 'page' => $page, 'per_page' => $perPage];
                     }
-                    $conds[] = 'MATCH(s.description) AGAINST (? IN BOOLEAN MODE)';
-                    $params[] = $words;
+                    [$sc, $sp] = self::shortWordCond('s.description', $short);
+                    $conds[] = ($words !== '' ? 'MATCH(s.description) AGAINST (? IN BOOLEAN MODE)' : '1 = 1') . $sc;
+                    if ($words !== '') {
+                        $params[] = $words;
+                    }
+                    array_push($params, ...$sp);
                 }
             }
         }

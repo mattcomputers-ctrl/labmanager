@@ -27,6 +27,15 @@ final class LogsController extends Controller
 
     public function index(Request $request): Response
     {
+        $export = $request->str('export');
+        if ($export === 'csv' || $export === 'xlsx') {
+            $this->auth->requirePermission(\Chroma\Core\Permissions::CODES_EXPORT);
+            $rows = array_map(fn($p) => [
+                'code' => $p['code'], 'label' => $p['label'], 'description' => $p['description'] ?? '', 'count' => (int) $p['count'], 'voided' => (int) $p['voided'],
+                'last' => $p['last'] ?? '', 'retired' => (int) $p['retired'] === 1 ? 'Retired' : '',
+            ], (new CodeSearch($this->db))->logPrefixes());
+            return Exporter::respond($export, 'code-logs', ['code' => 'Prefix', 'label' => 'Label', 'description' => 'Description', 'count' => 'Codes', 'voided' => 'Voided', 'last' => 'Last assigned', 'retired' => 'Retired'], $rows);
+        }
         $prefixes = (new CodeSearch($this->db))->logPrefixes();
         return $this->view('codes/logs-index', ['title' => 'Code logs', 'prefixes' => $prefixes, 'total' => array_sum(array_map(fn($p) => $p['count'], $prefixes))]);
     }

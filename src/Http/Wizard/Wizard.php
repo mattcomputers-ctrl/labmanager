@@ -33,6 +33,19 @@ abstract class Wizard
         return [];
     }
 
+    /** The help page (resources/help/{slug}.md) behind the "?" in the wizard progress bar. */
+    public function helpSlug(): string
+    {
+        return match ($this->key()) {
+            'quick-assign' => 'quick-assign',
+            'new-project', 'add-item', 'assign-item-code', 'batch-assign', 'link-codes' => 'projects',
+            'manual-entry', 'void-code' => 'codes',
+            'add-user', 'add-group' => 'admin-users',
+            'add-prefix' => 'admin-prefixes',
+            default => 'index',
+        };
+    }
+
     /** Initial state from query params (e.g. ?project_id=12). @return array<string,mixed> */
     public function initialState(Request $request): array
     {
@@ -47,6 +60,18 @@ abstract class Wizard
      * @return list<Step>
      */
     abstract public function steps(array $state): array;
+
+    /**
+     * False while the next answer still decides how many steps there are (the project type picks the
+     * questions that follow; "which code?" picks whether a prefix is asked). The shell then shows
+     * "Step 1" without a total and keeps the button at "Next" instead of promising the review screen.
+     * Steps that merely slot in between known ones (a suffix question) do not make the count unknown.
+     * @param array<string,mixed> $state
+     */
+    public function stepCountKnown(array $state): bool
+    {
+        return true;
+    }
 
     /**
      * Validate a step's input and return cleaned values to merge into state.

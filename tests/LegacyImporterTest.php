@@ -243,6 +243,14 @@ final class LegacyImporterTest extends TestCase
         $this->assertNull($this->sell('BN1439')['date_assigned']);
         $this->assertNull($this->internal(8800)['date_assigned']);
         $this->assertNull($this->sell('W1098')['date_assigned'], 'an unreadable date is left blank, not guessed');
+        // The audit snapshot taken at creation says the same thing as the row: no date, not the import day.
+        foreach ([['chroma_sell_numbers', (int) $this->sell('BN1439')['id'], 'code.import_sell'], ['chroma_internal_codes', (int) $this->internal(8800)['id'], 'code.import_internal']] as [$table, $id, $action]) {
+            $after = $this->db->value('SELECT after_json FROM chroma_audit_log WHERE table_name = ? AND row_id = ? AND action = ?', [$table, $id, $action]);
+            $this->assertNotNull($after, "$action was logged");
+            $snapshot = json_decode((string) $after, true);
+            $this->assertArrayHasKey('date_assigned', $snapshot);
+            $this->assertNull($snapshot['date_assigned'], "the audit snapshot of an undated $table row has no date either");
+        }
 
         // X log: codes without E#, comments as notes, E numbers created from the log, cross-file fill-in.
         $this->assertNull($this->sell('X104041')['internal_code_id']);
@@ -268,8 +276,11 @@ final class LegacyImporterTest extends TestCase
         $this->assertSame(0, (int) $this->db->value('SELECT COUNT(*) FROM chroma_code_prefix_suffixes WHERE prefix_id = ?', [$this->prefixId('X')]));
 
         // Everything is audited and the run is recorded.
-        $this->assertSame(36, (int) $this->db->value("SELECT COUNT(*) FROM chroma_audit_log WHERE action = 'code.manual_internal'"));
-        $this->assertSame(38, (int) $this->db->value("SELECT COUNT(*) FROM chroma_audit_log WHERE action = 'code.manual_sell'"));
+        // Imported rows are logged as imports, never as "entered by hand", so the history of a code says where it really came from.
+        $this->assertSame(36, (int) $this->db->value("SELECT COUNT(*) FROM chroma_audit_log WHERE action = 'code.import_internal'"));
+        $this->assertSame(38, (int) $this->db->value("SELECT COUNT(*) FROM chroma_audit_log WHERE action = 'code.import_sell'"));
+        $this->assertSame(0, (int) $this->db->value("SELECT COUNT(*) FROM chroma_audit_log WHERE action IN ('code.manual_internal', 'code.manual_sell')"));
+        $this->assertSame(38, (int) $this->db->value("SELECT COUNT(*) FROM chroma_audit_log WHERE action = 'code.import_sell' AND note LIKE 'Imported from the spreadsheets: %'"));
         $this->assertSame(1, (int) $this->db->value("SELECT COUNT(*) FROM chroma_audit_log WHERE action = 'import.commit'"));
         $run = $this->db->one('SELECT * FROM chroma_imports WHERE id = ?', [$plan->importId]);
         $this->assertSame('done', $run['status']);

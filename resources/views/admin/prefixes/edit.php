@@ -60,7 +60,7 @@ $floor = ($p['last_used'] ?? 0) + 1;
         <?php if ($canSetNext): ?>
         <form method="post" action="<?= e($href . '/next-number') ?>" class="mt-4" novalidate>
           <?= csrf_field() ?>
-          <?= component('form/field', ['name' => 'next_number', 'label' => 'Set the next number to', 'type' => 'number', 'min' => $floor, 'value' => old('next_number', (string) $p['next_number_effective']), 'prefix' => $p['code'], 'required' => true, 'attrs' => ['style' => 'max-width:200px'], 'help' => sprintf('Whole number only, at least %d. It is shown as %s.', $floor, \Chroma\Domain\Codes\CodeFormat::sell($p['code'], $p['next_number_effective'], (int) $p['min_digits']))]) ?>
+          <?= component('form/field', ['name' => 'next_number', 'label' => 'Set the next number to', 'type' => 'number', 'tip' => \Chroma\Http\Tips::NEXT_NUMBER, 'min' => $floor, 'value' => old('next_number', (string) $p['next_number_effective']), 'prefix' => $p['code'], 'required' => true, 'attrs' => ['style' => 'max-width:200px'], 'help' => sprintf('Whole number only, at least %d. It is shown as %s.', $floor, \Chroma\Domain\Codes\CodeFormat::sell($p['code'], $p['next_number_effective'], (int) $p['min_digits']))]) ?>
           <button type="submit" class="btn btn-secondary">Move the counter</button>
         </form>
         <?php else: ?>

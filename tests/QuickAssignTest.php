@@ -168,6 +168,18 @@ final class QuickAssignTest extends TestCase
         $this->assertNull($this->quick->product(null));
     }
 
+    public function testWizardPrefixScreenFoldsLegacyPrefixesAndStartsOnTheProductsPrefix(): void
+    {
+        $y = $this->codes->assignSell(['prefix_id' => $this->prefixId('Y'), 'description' => 'Yellow'], $this->adminId);
+        $w = new QuickAssignWizard($this->app);
+        $groups = $w->prefixGroups();
+        $this->assertContains('Y', array_column($groups['everyday'], 'code'));
+        $this->assertNotContains('UV', array_column($groups['everyday'], 'code'));
+        $this->assertSame(['UV', 'UVXL', 'UVVL', 'UVNG', 'WBC'], array_column($groups['other'], 'code'));
+        $this->assertSame($this->prefixId('Y'), $w->defaultPrefixId($w->productFor(['product_mode' => 'existing', 'product' => 'S' . $y['id']])));
+        $this->assertNull($w->defaultPrefixId(null));
+    }
+
     public function testPrefixChoicesShowNextNumberAndSuffixes(): void
     {
         $choices = $this->quick->prefixChoices();
@@ -198,7 +210,7 @@ final class QuickAssignTest extends TestCase
         $state = $w->initialState($this->request(['product' => 'E' . $e['id']]));
         $this->assertSame('E' . $e['id'], $state['product']);
         $steps = $w->steps($state);
-        $this->assertSame(['product', 'code'], array_map(fn($s) => $s->key, $steps));
+        $this->assertSame(['product', 'prefix', 'details', 'extras'], array_map(fn($s) => $s->key, $steps));
         $this->assertSame('codes/wizard-product', $steps[0]->template);
 
         // Step 1 refuses "existing" without a pick, accepts a pick.
@@ -212,18 +224,32 @@ final class QuickAssignTest extends TestCase
         $this->assertSame('E9102', $state['product_label']);
         $this->assertSame(['sell'], array_keys($w->wantsFor($w->productFor($state))));
 
-        // Step 2 needs a prefix and a reason for an alias; description defaults from the product.
+        // One question per screen: the product has an E number, so "what" has one answer and is skipped.
         $steps = $w->steps($state);
+        $this->assertSame(['product', 'prefix', 'details', 'extras'], array_map(fn($s) => $s->key, $steps));
+        $this->assertSame('codes/wizard-prefix', $steps[1]->template);
+        $this->assertSame('sell', $w->wantFor($state, $w->productFor($state)));
         try {
-            $w->validateStep($steps[1], ['want' => 'sell', 'prefix_id' => '', 'description' => ''], $state);
+            $w->validateStep($steps[1], ['prefix_id' => ''], $state);
             $this->fail();
         } catch (ValidationException $ex) {
             $this->assertArrayHasKey('prefix_id', $ex->errors);
+        }
+        $state = array_merge($state, $w->validateStep($steps[1], ['prefix_id' => (string) $this->prefixId('Y')], $state));
+        // Y allows UV, so a suffix screen appears; the description/reason screen refuses an alias without a reason.
+        $steps = $w->steps($state);
+        $this->assertSame(['product', 'prefix', 'suffix', 'details', 'extras'], array_map(fn($s) => $s->key, $steps));
+        $state = array_merge($state, $w->validateStep($steps[2], ['suffix_id' => (string) $this->suffixId('UV')], $state));
+        try {
+            $w->validateStep($steps[3], ['description' => '', 'reason' => ''], $state);
+            $this->fail();
+        } catch (ValidationException $ex) {
             $this->assertArrayHasKey('reason', $ex->errors);
             $this->assertArrayNotHasKey('description', $ex->errors);
         }
-        $state = array_merge($state, $w->validateStep($steps[1], ['want' => 'sell', 'prefix_id' => (string) $this->prefixId('Y'), 'suffix_id' => (string) $this->suffixId('UV'), 'description' => '', 'reason' => 'new_version'], $state));
+        $state = array_merge($state, $w->validateStep($steps[3], ['description' => '', 'reason' => 'new_version'], $state));
         $this->assertSame('Blister purple', $state['description']);
+        $state = array_merge($state, $w->validateStep($steps[4], [], $state));
         $rows = $w->review($state);
         $labels = array_column($rows, 'value', 'label');
         $this->assertStringContainsString('Y1715UV', $labels['Sell number']);
@@ -243,7 +269,16 @@ final class QuickAssignTest extends TestCase
         $steps = $w->steps($state);
         $state = array_merge($state, $w->validateStep($steps[0], ['product_mode' => 'new'], $state));
         $this->assertSame(['sell', 'internal', 'both'], array_keys($w->wantsFor(null)));
-        $state = array_merge($state, $w->validateStep($w->steps($state)[1], ['want' => 'both', 'prefix_id' => (string) $this->prefixId('AQ'), 'description' => 'Gloss coating', 'resale' => '1', 'vendor_name' => 'Vendor Co'], $state));
+        // Brand-new product: three possible answers, so the "what" question is asked and the rest waits for it.
+        $this->assertSame(['product', 'want'], array_map(fn($s) => $s->key, $w->steps($state)));
+        $state = array_merge($state, $w->validateStep($w->steps($state)[1], ['want' => 'both'], $state));
+        $this->assertSame(['product', 'want', 'prefix', 'details', 'extras'], array_map(fn($s) => $s->key, $w->steps($state)));
+        $byKey = fn(array $state) => array_combine(array_map(fn($s) => $s->key, $w->steps($state)), $w->steps($state));
+        $state = array_merge($state, $w->validateStep($byKey($state)['prefix'], ['prefix_id' => (string) $this->prefixId('AQ')], $state));
+        $state = array_merge($state, $w->validateStep($byKey($state)['details'], ['description' => 'Gloss coating'], $state));
+        $this->assertSame('resale', $byKey($state)['extras']->fields[1]['name'], 'an E number asks about resale');
+        $state = array_merge($state, $w->validateStep($byKey($state)['extras'], ['resale' => '1', 'vendor_name' => 'Vendor Co'], $state));
+        $this->assertSame('Yes — Vendor Co', array_column($w->review($state), 'value', 'label')['Resale item']);
         $result = $w->commit($state);
         $this->assertSame(['E9102', 'AQ5255'], array_map(fn($c) => $c['code'], $result->codes));
         $this->assertSame(1, (int) $this->db->value('SELECT resale FROM chroma_internal_codes WHERE number = 9102'));
@@ -447,9 +482,14 @@ final class QuickAssignTest extends TestCase
         $w = new QuickAssignWizard($this->app);
         $state = $w->initialState($this->request(['product_mode' => 'new']));
         $steps = $w->steps($state);
-        $this->assertContains('notes', array_column($steps[1]->fields, 'name'));
         $state = array_merge($state, $w->validateStep($steps[0], ['product_mode' => 'new'], $state));
-        $state = array_merge($state, $w->validateStep($w->steps($state)[1], ['want' => 'sell', 'prefix_id' => (string) $this->prefixId('T'), 'description' => 'Tint sample', 'reason' => '', 'notes' => 'Trial for Acme'], $state));
+        $byKey = fn(array $state) => array_combine(array_map(fn($s) => $s->key, $w->steps($state)), $w->steps($state));
+        $state = array_merge($state, $w->validateStep($byKey($state)['want'], ['want' => 'sell'], $state));
+        $state = array_merge($state, $w->validateStep($byKey($state)['prefix'], ['prefix_id' => (string) $this->prefixId('T')], $state));
+        $state = array_merge($state, $w->validateStep($byKey($state)['details'], ['description' => 'Tint sample', 'reason' => ''], $state));
+        $this->assertContains('notes', array_column($byKey($state)['extras']->fields, 'name'));
+        $this->assertNotContains('resale', array_column($byKey($state)['extras']->fields, 'name'), 'a sell number alone does not ask about resale');
+        $state = array_merge($state, $w->validateStep($byKey($state)['extras'], ['notes' => 'Trial for Acme'], $state));
         $this->assertSame('Trial for Acme', array_column($w->review($state), 'value', 'label')['Notes']);
         $result = $w->commit($state);
         $this->assertSame('T2450', $result->codes[0]['code']);

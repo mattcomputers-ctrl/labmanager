@@ -30,7 +30,7 @@ final class HomeController extends Controller
             [$uid, $uid, $uid]
         ) : [];
         $data['recentCodes'] = $this->auth->can(Permissions::CODES_VIEW) ? $this->db->all(
-            'SELECT * FROM v_chroma_code_lookup WHERE sell_number_voided = 0 ORDER BY sell_number_id DESC LIMIT 8'
+            'SELECT * FROM v_chroma_code_lookup WHERE sell_number_voided = 0 ORDER BY date_assigned DESC, sell_number_id DESC LIMIT 8'
         ) : [];
         $data['stats'] = [
             'open' => (int) $this->db->value('SELECT COUNT(*) FROM chroma_projects WHERE status = "open"'),

@@ -13,24 +13,25 @@
 
 <div class="grid grid-2">
   <div class="card"><div class="card-body">
-    <form method="post" action="/admin/import/upload" enctype="multipart/form-data" x-data="{ names: [], busy: false }" @submit="busy = true">
+    <form method="post" action="/admin/import/upload" enctype="multipart/form-data" x-data="{ names: [], tooMany: false, busy: false, pick: function (files) { this.names = Array.from(files).map(function (f) { return f.name + ' (' + Math.round(f.size / 1024) + ' KB)'; }); this.tooMany = files.length > 3; } }" @submit="if (tooMany) { $event.preventDefault(); return; } busy = true">
       <?= csrf_field() ?>
       <div class="field">
         <label class="label" for="f-files">Spreadsheets <span class="req" aria-hidden="true">*</span></label>
         <div class="dropzone import-dropzone" :class="{ over: dragging }" x-data="{ dragging: false }" @dragover.prevent="dragging = true" @dragleave="dragging = false" @drop="dragging = false">
-          <input type="file" id="f-files" name="files[]" multiple accept=".xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" @change="names = Array.from($event.target.files).map(f => f.name + ' (' + Math.round(f.size / 1024) + ' KB)')" aria-describedby="f-files-help">
+          <input type="file" id="f-files" name="files[]" multiple accept=".xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" @change="pick($event.target.files)" aria-describedby="f-files-help">
           <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5M4 17v3h16v-3"/></svg>
           <p class="mb-0"><strong>Choose up to three files</strong> or drag them here.<br><span class="small">.xls or .xlsx, up to <?= (int) $maxMb ?> MB each.</span></p>
           <ul class="picked list" x-show="names.length" x-cloak>
             <template x-for="n in names" :key="n"><li><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h10l6 6v10H4z"/></svg><span x-text="n"></span></li></template>
           </ul>
         </div>
+        <p class="error-text" role="alert" x-show="tooMany" x-cloak><span>That is more than three files. Chroma reads at most three: the cross-reference, the security log and the UV log. Choose the files again, leaving the extra one out.</span></p>
         <?php $err = form_errors()['files'] ?? null; if ($err): ?><p class="error-text" role="alert"><?= e($err) ?></p><?php endif; ?>
         <p class="help" id="f-files-help">Chroma tells the sheets apart by their header row, not by the file name, so you can upload them in any order. The real spreadsheets stay in use until cutover: you can run this on a test install first and again on the day.</p>
       </div>
       <?= component('form/field', ['name' => 'map_uvv', 'type' => 'checkbox', 'label' => 'Import UVV rows under the UVVL prefix', 'value' => old('map_uvv', '1'), 'help' => 'The cross-reference spells the inherited UVVL prefix as UVV on many rows. Ticked: those rows become UVVL codes and the original spelling is kept. Unticked: they go under a new retired prefix called UVV.']) ?>
       <div class="form-actions">
-        <button class="btn btn-primary<?= is_easy() ? ' btn-lg' : '' ?>" type="submit" :disabled="busy"><span x-show="!busy">Upload and run a dry run</span><span x-show="busy" x-cloak>Reading the sheets…</span></button>
+        <button class="btn btn-primary<?= is_easy() ? ' btn-lg' : '' ?>" type="submit" :disabled="busy || tooMany"><span x-show="!busy">Upload and run a dry run</span><span x-show="busy" x-cloak>Reading the sheets…</span></button>
       </div>
       <p class="help mb-0">The dry run reads every row and reports what would be created, filled in or skipped, plus duplicates and rows it cannot read. It writes nothing.</p>
     </form>

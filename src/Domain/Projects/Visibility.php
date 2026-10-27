@@ -49,6 +49,21 @@ final class Visibility
     }
 
     /**
+     * Same question for a "where a code came from" row as CodeSearch::origins()
+     * returns it (project_id, confidential, assigned_user_id, created_by).
+     * @param array<string,mixed> $origin
+     */
+    public function canViewOrigin(array $origin): bool
+    {
+        return $this->canView([
+            'id' => (int) ($origin['project_id'] ?? 0),
+            'confidential' => (int) ($origin['confidential'] ?? 0),
+            'assigned_user_id' => $origin['assigned_user_id'] ?? null,
+            'created_by' => $origin['created_by'] ?? null,
+        ]);
+    }
+
+    /**
      * SQL fragment restricting a query to projects the current user may see.
      * @return array{0:string,1:list<mixed>} [sql, params]
      */

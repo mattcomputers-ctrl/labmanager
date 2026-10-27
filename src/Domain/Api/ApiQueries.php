@@ -47,12 +47,16 @@ final class ApiQueries
                 if ($internal['version'] !== '') {
                     $params['iver'] = $internal['version'];
                 }
-            } elseif ($sell !== null && $this->prefixExists($sell['prefix'])) {
+            } elseif ($sell !== null && ($this->prefixExists($sell['prefix']) || $this->prefixExists(CodeFormat::canonicalPrefix($sell['prefix'])))) {
                 // Only a real prefix is read as a sell number: "pantone 300"
                 // or "stress test 4" parse as PANTONE300 / STRESSTEST4 but
                 // must search descriptions, exactly as the app's lookup does.
-                $where[] = 's.sell_number_normalized LIKE :norm';
+                // Historical spellings (UVV185, UVV-184) resolve through the
+                // canonical prefix and the spelling kept in legacy_text.
+                $where[] = '(s.sell_number_normalized LIKE :norm OR s.sell_number_normalized LIKE :canon OR s.legacy_text = :legacy)';
                 $params['norm'] = $sell['normalized'] . '%';
+                $params['canon'] = CodeFormat::canonicalPrefix($sell['prefix']) . $sell['number'] . $sell['suffix'] . '%';
+                $params['legacy'] = strtoupper($q);
             } else {
                 // Boolean-mode fulltext only: every word required, prefix
                 // matched. No LIKE, so % and _ in q are plain text and the
@@ -77,11 +81,21 @@ final class ApiQueries
     /** One sell number by any spelling, or null. @return array<string,mixed>|null */
     public function sellNumber(string $code): ?array
     {
-        $norm = CodeFormat::normalizeSell($code);
-        if ($norm === null) {
+        $sell = CodeFormat::parseSell($code);
+        if ($sell === null) {
             return null;
         }
-        $row = $this->db->one($this->sellSelect() . ' WHERE s.sell_number_normalized = ?', [$norm]);
+        // The literal spelling first, then the canonical prefix (UVV185 ->
+        // UVVL185), then the spelling as it stood on the old sheets: the
+        // same three readings the app's lookup page uses.
+        $row = $this->db->one($this->sellSelect() . ' WHERE s.sell_number_normalized = ?', [$sell['normalized']]);
+        $canon = CodeFormat::canonicalPrefix($sell['prefix']) . $sell['number'] . $sell['suffix'];
+        if ($row === null && $canon !== $sell['normalized']) {
+            $row = $this->db->one($this->sellSelect() . ' WHERE s.sell_number_normalized = ?', [$canon]);
+        }
+        if ($row === null) {
+            $row = $this->db->one($this->sellSelect() . ' WHERE s.legacy_text = ?', [strtoupper(trim($code))]);
+        }
         if ($row === null) {
             return null;
         }

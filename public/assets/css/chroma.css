@@ -62,13 +62,23 @@
   --border-strong: var(--c-gray-300);
   --text: var(--c-gray-900);
   --text-2: var(--c-gray-600);
-  --text-3: var(--c-gray-500);
+  --text-3: #646d7e; /* 4.95:1 on --bg, 5.2:1 on white: secondary text stays readable; --c-gray-500 is for placeholders/disabled only */
   --link: var(--c-primary-600);
   --primary: var(--c-primary-600);
   --primary-hover: var(--c-primary-700);
   --primary-soft: var(--c-primary-50);
   --primary-soft-2: var(--c-primary-100);
   --on-primary: #ffffff;
+  /* Filled buttons and accent text get their own tokens: the dark theme needs a darker blue under white
+     button text and a lighter blue for text on dark surfaces (both must read at 4.5:1), while --primary
+     stays the mid blue used for borders, bars and icons. In the light theme they all share one blue. */
+  --primary-fill: var(--c-primary-600);
+  --primary-fill-hover: var(--c-primary-700);
+  --accent-text: var(--c-primary-600);
+  --accent-text-strong: var(--c-primary-600);
+  --danger-fill: var(--c-red-600);
+  --danger-fill-hover: var(--c-red-700);
+  --success-fill: var(--c-green-600);
   --danger: var(--c-red-600);
   --danger-hover: var(--c-red-700);
   --danger-soft: var(--c-red-100);
@@ -119,6 +129,13 @@
     --link: #8aa8ff;
     --primary: #4f78f6;
     --primary-hover: #6a8ef8;
+    --primary-fill: #3763f2;        /* white on it: 4.97:1 (white on #4f78f6 is only 3.9:1) */
+    --primary-fill-hover: #4f78f6;
+    --accent-text: #8aa8ff;         /* 6.4:1 on --primary-soft, 7.2:1 on --surface */
+    --accent-text-strong: #b9ccff;  /* 7.9:1 on --primary-soft-2 (avatar initials) */
+    --danger-fill: #d12b2b;         /* white on it: 5.1:1 */
+    --danger-fill-hover: #b82424;
+    --success-fill: #177a43;        /* white on it: 5.4:1 */
     --primary-soft: #1d2740;
     --primary-soft-2: #243256;
     --danger: #f06262;
@@ -150,6 +167,13 @@
   --link: #8aa8ff;
   --primary: #4f78f6;
   --primary-hover: #6a8ef8;
+  --primary-fill: #3763f2;
+  --primary-fill-hover: #4f78f6;
+  --accent-text: #8aa8ff;
+  --accent-text-strong: #b9ccff;
+  --danger-fill: #d12b2b;
+  --danger-fill-hover: #b82424;
+  --success-fill: #177a43;
   --primary-soft: #1d2740;
   --primary-soft-2: #243256;
   --danger: #f06262;
@@ -219,7 +243,8 @@ img { max-width: 100%; }
 .grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .grid-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 @media (max-width: 900px) { .grid-3, .grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 640px) { .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; } }
+@media (max-width: 640px) { .grid-2, .grid-3, .grid-4 { grid-template-columns: minmax(0, 1fr); } }
+.stack > * { min-width: 0; }
 .mt-0 { margin-top: 0; } .mt-2 { margin-top: var(--s-2); } .mt-4 { margin-top: var(--s-4); } .mt-6 { margin-top: var(--s-6); } .mt-8 { margin-top: var(--s-8); }
 .mb-0 { margin-bottom: 0; } .mb-2 { margin-bottom: var(--s-2); } .mb-4 { margin-bottom: var(--s-4); } .mb-6 { margin-bottom: var(--s-6); }
 .w-full { width: 100%; }
@@ -245,7 +270,7 @@ img { max-width: 100%; }
   border-radius: var(--radius-s); color: var(--text-2); font-weight: 500; white-space: nowrap;
 }
 .nav a:hover { background: var(--surface-2); color: var(--text); text-decoration: none; }
-.nav a.active { background: var(--primary-soft); color: var(--primary); }
+.nav a.active { background: var(--primary-soft); color: var(--accent-text); }
 .topbar-right { margin-left: auto; display: flex; align-items: center; gap: var(--s-3); }
 .topbar-search { display: flex; align-items: center; }
 .topbar-search input { width: 260px; min-height: 40px; }
@@ -257,9 +282,12 @@ img { max-width: 100%; }
   border: 0; background: transparent; color: var(--text-2); font: inherit; font-weight: 600; font-size: var(--fs-s);
   padding: 6px 14px; border-radius: 999px; cursor: pointer; min-height: 34px; line-height: 1;
 }
-.mode-toggle .on { background: var(--surface); color: var(--primary); box-shadow: var(--shadow-1); }
+.mode-toggle .on { background: var(--surface); color: var(--accent-text); box-shadow: var(--shadow-1); }
 .mode-toggle a:hover { text-decoration: none; }
-.avatar { width: 36px; height: 36px; border-radius: 50%; background: var(--primary-soft-2); color: var(--primary); display: inline-flex; align-items: center; justify-content: center; font-weight: 700; font-size: var(--fs-s); }
+.avatar { width: 36px; height: 36px; border-radius: 50%; background: var(--primary-soft-2); color: var(--accent-text-strong); display: inline-flex; align-items: center; justify-content: center; font-weight: 700; font-size: var(--fs-s); }
+/* The activity feed's small avatars (projects.css) use the same blue-on-blue; in the dark theme give them the readable tint too. */
+:root[data-theme="dark"] .feed .avatar-sm { color: var(--accent-text-strong); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .feed .avatar-sm { color: var(--accent-text-strong); } }
 .menu { position: relative; }
 .menu-panel {
   position: absolute; right: 0; top: calc(100% + 6px); min-width: 220px; background: var(--surface);
@@ -268,14 +296,40 @@ img { max-width: 100%; }
 .menu-panel a, .menu-panel button { display: flex; width: 100%; align-items: center; gap: var(--s-2); padding: 10px 12px; border-radius: var(--radius-s); color: var(--text); background: none; border: 0; font: inherit; text-align: left; cursor: pointer; min-height: var(--touch); }
 .menu-panel a:hover, .menu-panel button:hover { background: var(--surface-2); text-decoration: none; }
 .menu-panel .menu-head { padding: 8px 12px; color: var(--text-3); font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: 0.06em; }
-.topbar .hamburger { display: none; }
+/* The menu button is a flex item in a bar that is tight on phones; without these it is the only thing that
+   shrinks and ends up 25px wide. It keeps its full 44px target and the brand link stays a 44px-tall target. */
+.topbar .hamburger { display: none; flex: 0 0 var(--touch); min-width: var(--touch); }
+.topbar .brand { flex-shrink: 0; min-height: var(--touch); }
+.topbar-right { flex-shrink: 0; }
+@media (max-width: 480px) {
+  /* Reclaim the room the 44px menu button needs so the mode toggle and account button stay inside the viewport. */
+  .topbar { gap: var(--s-2); padding: 0 var(--s-2); }
+  .topbar-right { gap: var(--s-2); }
+  .mode-toggle a, .mode-toggle button { padding: 6px 10px; }
+}
 @media (max-width: 960px) {
   .nav { display: none; }
   .nav.open { display: flex; flex-direction: column; align-items: stretch; position: absolute; top: var(--topbar-h); left: 0; right: 0; background: var(--surface); border-bottom: 1px solid var(--border); padding: var(--s-2); box-shadow: var(--shadow-2); }
   .nav.open a { min-height: var(--touch); }
+  /* Dimmed backdrop under the open panel: a tap on it (or anywhere outside the panel) closes the menu. */
+  .nav.open::before { content: ''; position: fixed; inset: var(--topbar-h) 0 0 0; background: rgba(0, 0, 0, .25); z-index: -1; }
+  .nav.open .nav-search { display: flex; padding: var(--s-1) var(--s-2) var(--s-2); }
+  .nav.open .nav-search input { width: 100%; min-height: var(--touch); }
   .topbar .hamburger { display: inline-flex; }
   .topbar-search { display: none; }
 }
+/* The search box inside the phone menu; on wider screens the top-bar search is used instead. */
+.nav-search { display: none; }
+/* Help page: topic list beside the article, above it on narrow screens. */
+.help-layout { grid-template-columns: 240px 1fr; gap: var(--s-8); }
+.help-topics a { display: block; padding: 6px 0; min-height: var(--touch); display: flex; align-items: center; }
+.help-pick { display: none; }
+.help-topics a.current { font-weight: 700; color: var(--accent-text); }
+@media (max-width: 800px) { .help-layout { grid-template-columns: 1fr; gap: var(--s-4); } .help-topics { display: none; } .help-pick { display: block; margin-bottom: 0; } }
+/* Wizard progress bar "?" link */
+.wizard-help { gap: 6px; }
+.wizard-help span[aria-hidden] { display: inline-flex; width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--border-strong); align-items: center; justify-content: center; font-size: 12px; font-weight: 700; }
+@media (max-width: 480px) { .wizard-help-text { display: none; } }
 .page { max-width: var(--content-max); margin: 0 auto; padding: var(--s-6) var(--s-4) var(--s-16); }
 .page-narrow { max-width: 760px; }
 .page-header { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: var(--s-4); margin-bottom: var(--s-6); }
@@ -299,17 +353,19 @@ img { max-width: 100%; }
 .btn:hover { text-decoration: none; }
 .btn:active { transform: translateY(1px); }
 .btn:disabled, .btn[aria-disabled="true"] { opacity: .55; cursor: not-allowed; transform: none; }
-.btn-primary { background: var(--primary); color: var(--on-primary); }
-.btn-primary:hover { background: var(--primary-hover); }
+.btn-primary { background: var(--primary-fill); color: var(--on-primary); }
+.btn-primary:hover { background: var(--primary-fill-hover); }
 .btn-secondary { background: var(--surface); color: var(--text); border-color: var(--border-strong); }
 .btn-secondary:hover { background: var(--surface-2); }
 .btn-ghost { background: transparent; color: var(--text-2); }
 .btn-ghost:hover { background: var(--surface-2); color: var(--text); }
-.btn-danger { background: var(--danger); color: #fff; }
-.btn-danger:hover { background: var(--danger-hover); }
+.btn-danger { background: var(--danger-fill); color: #fff; }
+.btn-danger:hover { background: var(--danger-fill-hover); }
 .btn-danger-outline { background: var(--surface); color: var(--danger); border-color: var(--danger); }
 .btn-danger-outline:hover { background: var(--danger-soft); }
-.btn-success { background: var(--success); color: #fff; }
+.btn-success { background: var(--success-fill); color: #fff; }
+.btn-danger-ghost { background: transparent; color: var(--text-2); }
+.btn-danger-ghost:hover, .btn-danger-ghost:focus-visible { background: var(--danger-soft); color: var(--danger); }
 .btn-lg { min-height: 56px; padding: 0 var(--s-8); font-size: var(--fs-l); border-radius: var(--radius); }
 .btn-sm { min-height: 36px; padding: 0 var(--s-3); font-size: var(--fs-s); }
 .btn-icon { padding: 0; width: var(--touch); }
@@ -382,6 +438,8 @@ legend { font-weight: 650; font-size: var(--fs-l); margin-bottom: var(--s-3); pa
 .lookup-item:hover, .lookup-item.active { background: var(--primary-soft); }
 .lookup-item .sub { color: var(--text-2); font-size: var(--fs-s); }
 .lookup-empty { padding: 12px; color: var(--text-2); font-size: var(--fs-s); }
+.lookup-item-new { border-top: 1px solid var(--border); color: var(--accent-text); }
+.lookup-hint { margin-top: 6px; color: var(--text-2); }
 .lookup-selected { display: flex; align-items: center; gap: var(--s-2); padding: 8px 12px; border: 1px solid var(--primary); background: var(--primary-soft); border-radius: var(--radius-s); min-height: var(--touch); }
 
 /* --------------------------------------------------------------------------
@@ -432,20 +490,35 @@ legend { font-weight: 650; font-size: var(--fs-l); margin-bottom: var(--s-3); pa
 .code-pill:hover { text-decoration: none; border-color: var(--primary); }
 .code-pill.void { text-decoration: line-through; color: var(--text-3); }
 .code-display { text-align: center; padding: var(--s-8) var(--s-4); }
-.code-display .big-code { font-family: var(--mono); font-size: var(--fs-code); font-weight: 700; letter-spacing: 0.04em; line-height: 1.1; color: var(--primary); word-break: break-all; }
+.code-display .big-code { font-family: var(--mono); font-size: var(--fs-code); font-weight: 700; letter-spacing: 0.04em; line-height: 1.1; color: var(--primary); word-break: normal; overflow-wrap: anywhere; }
 .code-display .code-label { color: var(--text-2); margin-bottom: var(--s-2); }
 .code-display .code-desc { margin-top: var(--s-2); font-size: var(--fs-l); }
-@media (max-width: 480px) { .code-display .big-code { font-size: var(--fs-3xl); } }
+@media (max-width: 480px) { .code-display .big-code { font-size: 1.375rem; letter-spacing: 0; } }
 .void-row, .is-void { opacity: .6; }
 .void-row .code { text-decoration: line-through; }
 
 /* --------------------------------------------------------------------------
    Tables
    -------------------------------------------------------------------------- */
-.table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-1); }
+/* The wrapper clips rather than scrolls by default: a scrolling wrapper would become the scroll container for the
+   sticky header row, which then never sticks while the page scrolls. Only a table that is actually wider than
+   the wrapper gets overflow-x: auto (chroma.js adds .can-scroll, and keeps it current as the table changes size);
+   those tables trade the sticky header for sideways scrolling. */
+.table-wrap { overflow-x: clip; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-1); }
+/* Sideways-scroll cue: shadows at the edges that hide more columns (chroma.js adds .can-scroll when the table is wider than the wrapper). */
+.table-wrap.can-scroll {
+  overflow-x: auto;
+  background: linear-gradient(to right, var(--surface) 30%, rgba(255,255,255,0)), linear-gradient(to right, rgba(255,255,255,0), var(--surface) 70%) 100% 0,
+    radial-gradient(farthest-side at 0 50%, rgba(0,0,0,.18), rgba(0,0,0,0)), radial-gradient(farthest-side at 100% 50%, rgba(0,0,0,.18), rgba(0,0,0,0)) 100% 0;
+  background-repeat: no-repeat; background-size: 40px 100%, 40px 100%, 14px 100%, 14px 100%; background-attachment: local, local, scroll, scroll;
+}
+.scroll-hint { display: none; margin: 6px 0 0; font-size: var(--fs-s); color: var(--text-3); }
+@media (pointer: coarse) { .table-wrap.can-scroll + .scroll-hint { display: block; } }
 .table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: var(--fs); }
 .table th, .table td { padding: 0 var(--s-4); height: var(--row-h); text-align: left; vertical-align: middle; border-bottom: 1px solid var(--border); }
-.table th { position: sticky; top: 0; background: var(--surface-2); font-weight: 600; font-size: var(--fs-s); color: var(--text-2); white-space: nowrap; z-index: 2; }
+/* A sideways-scrolling wrapper is the header's scroll container, so there top must be 0 or the header lands on the first row. */
+.table-wrap.can-scroll .table th { top: 0; }
+.table th { position: sticky; top: var(--topbar-h); background: var(--surface-2); font-weight: 600; font-size: var(--fs-s); color: var(--text-2); white-space: nowrap; z-index: 2; }
 .table th a { color: inherit; display: inline-flex; gap: 4px; align-items: center; }
 .table tbody tr:nth-child(even) td { background: var(--c-gray-50); }
 :root[data-theme="dark"] .table tbody tr:nth-child(even) td { background: #1d222c; }
@@ -464,12 +537,12 @@ legend { font-weight: 650; font-size: var(--fs-l); margin-bottom: var(--s-3); pa
 .pagination { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); margin-top: var(--s-4); flex-wrap: wrap; color: var(--text-2); font-size: var(--fs-s); }
 .pagination .pages { display: flex; gap: var(--s-1); }
 .pagination a, .pagination span.cur { display: inline-flex; align-items: center; justify-content: center; min-width: 40px; height: 40px; padding: 0 10px; border-radius: var(--radius-s); border: 1px solid var(--border); color: var(--text); background: var(--surface); }
-.pagination span.cur { background: var(--primary); color: #fff; border-color: var(--primary); }
+.pagination span.cur { background: var(--primary-fill); color: #fff; border-color: var(--primary-fill); }
 .pagination a:hover { background: var(--surface-2); text-decoration: none; }
 .filters { display: flex; gap: var(--s-2); flex-wrap: wrap; align-items: center; }
 .filters select, .filters input { min-width: 140px; width: auto; }
 .filter-chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--border-strong); background: var(--surface); color: var(--text-2); font-size: var(--fs-s); font-weight: 500; min-height: 36px; }
-.filter-chip.on, .filter-chip:hover { border-color: var(--primary); color: var(--primary); background: var(--primary-soft); text-decoration: none; }
+.filter-chip.on, .filter-chip:hover { border-color: var(--primary); color: var(--accent-text); background: var(--primary-soft); text-decoration: none; }
 
 /* --------------------------------------------------------------------------
    Progress, tabs, lists
@@ -479,7 +552,7 @@ legend { font-weight: 650; font-size: var(--fs-l); margin-bottom: var(--s-3); pa
 .progress-label { font-size: var(--fs-s); color: var(--text-2); margin-top: 4px; }
 .tabs { display: flex; gap: var(--s-1); border-bottom: 1px solid var(--border); margin-bottom: var(--s-5); overflow-x: auto; }
 .tabs a, .tabs button { padding: 10px 14px; min-height: var(--touch); display: inline-flex; align-items: center; color: var(--text-2); font-weight: 600; border-bottom: 2px solid transparent; margin-bottom: -1px; background: none; border-top: 0; border-left: 0; border-right: 0; font: inherit; cursor: pointer; white-space: nowrap; }
-.tabs a.active, .tabs button.active { color: var(--primary); border-bottom-color: var(--primary); }
+.tabs a.active, .tabs button.active { color: var(--accent-text); border-bottom-color: var(--primary); }
 .tabs a:hover { text-decoration: none; color: var(--text); }
 .list { list-style: none; margin: 0; padding: 0; }
 .list li { display: flex; gap: var(--s-3); align-items: center; padding: var(--s-3) 0; border-bottom: 1px solid var(--border); min-height: 56px; }
@@ -487,10 +560,10 @@ legend { font-weight: 650; font-size: var(--fs-l); margin-bottom: var(--s-3); pa
 .feed { list-style: none; margin: 0; padding: 0; }
 .feed li { display: grid; grid-template-columns: 36px 1fr; gap: var(--s-3); padding: var(--s-3) 0; border-bottom: 1px solid var(--border); }
 .feed li:last-child { border-bottom: 0; }
-.feed .feed-meta { color: var(--text-3); font-size: var(--fs-xs); }
+.feed .feed-meta { color: var(--text-3); font-size: var(--fs-s); }
 .feed .feed-body p:last-child { margin-bottom: 0; }
 .feed .feed-system { color: var(--text-2); font-size: var(--fs-s); }
-.mention { color: var(--primary); font-weight: 600; }
+.mention { color: var(--accent-text); font-weight: 600; }
 
 /* --------------------------------------------------------------------------
    Wizard (Easy mode): one question per screen, big Next/Back, progress
@@ -544,16 +617,43 @@ legend { font-weight: 650; font-size: var(--fs-l); margin-bottom: var(--s-3); pa
 .modal-foot { padding: var(--s-4) var(--s-6) var(--s-6); display: flex; gap: var(--s-3); justify-content: flex-end; flex-wrap: wrap; }
 @media (max-width: 640px) { .modal-foot { flex-direction: column-reverse; } .modal-foot .btn { width: 100%; } }
 .help-tip { display: inline-flex; width: 22px; height: 22px; border-radius: 50%; border: 1px solid var(--border-strong); color: var(--text-2); align-items: center; justify-content: center; font-size: 13px; font-weight: 700; cursor: pointer; background: var(--surface); vertical-align: middle; }
-.help-tip:hover { border-color: var(--primary); color: var(--primary); }
-.help-pop { position: absolute; z-index: 70; max-width: 320px; padding: var(--s-3) var(--s-4); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-2); font-size: var(--fs-s); font-weight: 400; color: var(--text); margin-top: 6px; }
+.help-tip:hover { border-color: var(--primary); color: var(--accent-text); }
+.help-pop { position: absolute; left: 0; width: max-content; z-index: 70; max-width: min(320px, calc(100vw - 32px)); padding: var(--s-3) var(--s-4); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-2); font-size: var(--fs-s); font-weight: 400; color: var(--text); margin-top: 6px; text-transform: none; letter-spacing: normal; white-space: normal; }
+@media (max-width: 480px) { .help-pop { position: fixed; left: 16px; right: 16px; width: auto; max-width: none; } }
 
 /* --------------------------------------------------------------------------
    Misc: login, home, styleguide swatches, keyboard hints
    -------------------------------------------------------------------------- */
 .login-page { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: var(--s-4); background: radial-gradient(1200px 600px at 10% -10%, var(--primary-soft), transparent), var(--bg); }
 .login-card { width: 100%; max-width: 420px; }
-.home-grid { display: grid; grid-template-columns: 2fr 1fr; gap: var(--s-6); }
-@media (max-width: 960px) { .home-grid { grid-template-columns: 1fr; } }
+/* minmax(0, …) so a wide table or select inside a column cannot push the page wider than the phone (1fr alone means minmax(auto, 1fr)). */
+.home-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: var(--s-6); }
+.home-grid > * { min-width: 0; }
+@media (max-width: 960px) { .home-grid { grid-template-columns: minmax(0, 1fr); } }
+/* Easy mode on a phone: the two home tables become short rows (number + title / customer + date, progress
+   below) so nothing sits off the right edge. Expert mode keeps the full table, scrolling inside the card. */
+@media (max-width: 640px) {
+  .mode-easy .home-table thead { display: none; }
+  .mode-easy .home-table, .mode-easy .home-table tbody { display: block; width: 100%; }
+  .mode-easy .home-table tr { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; column-gap: var(--s-3); row-gap: 4px; align-items: center; padding: var(--s-3) var(--s-4); border-bottom: 1px solid var(--border); }
+  .mode-easy .home-table tr:last-child { border-bottom: 0; }
+  .mode-easy .home-table td, .mode-easy .home-table tbody tr:nth-child(even) td, .mode-easy .home-table tbody tr:hover td { display: block; height: auto; min-height: 0; padding: 0; border: 0; background: transparent; white-space: normal; min-width: 0; max-width: none; overflow-wrap: anywhere; }
+  .mode-easy .home-table td.nowrap { white-space: nowrap; }
+  .mode-easy .home-table td.home-secondary { color: var(--text-2); font-size: var(--fs-s); }
+  .mode-easy .home-table td[data-label]::before { content: attr(data-label) ' '; color: var(--text-3); font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: .04em; font-weight: 600; }
+  /* Your open projects: #, [type] title / customer · submitted / progress bar */
+  .mode-easy .home-projects td:nth-child(1) { grid-column: 1; grid-row: 1; }
+  .mode-easy .home-projects td:nth-child(2) { grid-column: 2 / span 2; grid-row: 1; }
+  .mode-easy .home-projects td:nth-child(3) { grid-column: 2; grid-row: 2; }
+  .mode-easy .home-projects td:nth-child(5) { grid-column: 3; grid-row: 2; }
+  .mode-easy .home-projects td:nth-child(4) { grid-column: 2 / span 2; grid-row: 3; }
+  /* Latest sell numbers: sell number · E# / description / customer · date */
+  .mode-easy .home-codes td:nth-child(1) { grid-column: 1 / span 2; grid-row: 1; }
+  .mode-easy .home-codes td:nth-child(2) { grid-column: 3; grid-row: 1; justify-self: end; }
+  .mode-easy .home-codes td:nth-child(3) { grid-column: 1 / span 3; grid-row: 2; }
+  .mode-easy .home-codes td:nth-child(4) { grid-column: 1 / span 2; grid-row: 3; }
+  .mode-easy .home-codes td:nth-child(5) { grid-column: 3; grid-row: 3; }
+}
 .quick-actions { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: var(--s-3); }
 .quick-action { display: flex; flex-direction: column; gap: var(--s-2); padding: var(--s-5); border-radius: var(--radius); border: 1px solid var(--border); background: var(--surface); color: var(--text); min-height: 110px; box-shadow: var(--shadow-1); }
 .quick-action:hover { border-color: var(--primary); text-decoration: none; box-shadow: var(--shadow-2); }
@@ -575,6 +675,23 @@ legend { font-weight: 650; font-size: var(--fs-l); margin-bottom: var(--s-3); pa
 .items-grid td.n { width: 36px; text-align: center; color: var(--text-3); font-variant-numeric: tabular-nums; }
 .items-grid td.rm { width: 44px; }
 .items-grid tr.selected td { background: var(--primary-soft); }
+
+/* Touch devices (the lab tablet and phones): secondary controls grow to finger size; desktop density is unchanged. */
+@media (pointer: coarse) {
+  .btn-sm, .filter-chip, .pagination a, .pagination span.cur, .sys-subnav a, .tabs a { min-height: var(--touch); }
+  .btn-icon.btn-sm { width: var(--touch); }
+  .mode-toggle { padding: 2px; }
+  .mode-toggle a, .mode-toggle button { min-height: 38px; padding: 8px 14px; }
+  .topbar .brand { min-height: var(--touch); display: inline-flex; align-items: center; }
+  .breadcrumbs a { display: inline-flex; align-items: center; min-height: 32px; padding: 0 2px; }
+  .help-tip { width: 32px; height: 32px; }
+  .code-pill { min-height: 36px; }
+  .table input[type=checkbox], .check-cell input { width: 24px; height: 24px; }
+}
+/* Phones: the dense tables and the small "facts" lines carry the data, so they do not drop below 14px there. */
+@media (max-width: 640px) {
+  .table-dense .table th, .table-dense .table td, .help, .breadcrumbs, .badge { font-size: var(--fs-s); }
+}
 
 /* Print */
 @media print {

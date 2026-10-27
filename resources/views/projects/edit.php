@@ -19,7 +19,7 @@ $teamIds = array_map(fn($u) => (int) $u['id'], $team);
       <?php break; case 'select': ?>
         <?= component('form/field', ['name' => $n, 'label' => $label, 'type' => 'select', 'placeholder' => 'Not set', 'value' => old($n, $f['value']), 'options' => $f['options'], 'help' => $f['help'], 'size' => 'lg']) ?>
       <?php break; case 'checkbox': ?>
-        <?= component('form/field', ['name' => $n, 'label' => $label, 'type' => 'checkbox', 'value' => old($n, $f['value']), 'help' => $f['help']]) ?>
+        <?= component('form/field', ['name' => $n, 'label' => $label, 'type' => 'checkbox', 'value' => old($n, $f['value']), 'help' => $f['help'], 'tip' => $f['tip'] ?? null]) ?>
       <?php break; case 'date': ?>
         <?= component('form/field', ['name' => $n, 'label' => $label, 'type' => 'date', 'value' => old($n, $f['value']), 'help' => $f['help'], 'size' => 'lg']) ?>
       <?php break; default: ?>

@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace Chroma\Http\Wizard;
 
+use Chroma\Http\Tips;
 use Chroma\Core\ForbiddenException;
 use Chroma\Core\NotFoundException;
 use Chroma\Core\Permissions;
@@ -68,6 +69,21 @@ final class BatchAssignWizard extends Wizard
         return array_values(array_filter($this->projects()->items()->forProject((int) $project['id']), fn($i) => $i['internal_code_id'] === null || $i['sell_number_id'] === null));
     }
 
+    /**
+     * "What should each one get?" decides whether a prefix is asked, and the prefix decides whether a suffix
+     * question is added after it (the last known step), so the count is open until those are answered.
+     */
+    public function stepCountKnown(array $state): bool
+    {
+        $canI = $this->app->auth->can(Permissions::CODES_ASSIGN_INTERNAL);
+        $canS = $this->app->auth->can(Permissions::CODES_ASSIGN_SELL);
+        $what = $state['what'] ?? ($canI && $canS ? null : ($canI ? 'internal' : 'sell'));
+        if ($what === null) {
+            return false;
+        }
+        return $what === 'internal' || !empty($state['prefix_id']);
+    }
+
     public function steps(array $state): array
     {
         $project = $this->project($state);
@@ -86,15 +102,15 @@ final class BatchAssignWizard extends Wizard
         if (in_array($what, ['sell', 'both'], true)) {
             $prefixes = $this->app->db->all('SELECT id, code, label, description FROM chroma_code_prefixes WHERE retired = 0 ORDER BY sort_order, code');
             $steps[] = new Step('prefix', 'Which prefix for the sell numbers?', 'One prefix for all of them. If they need different prefixes, assign them one at a time or use Expert mode, where the prefix is chosen per row.', [[
-                'name' => 'prefix_id', 'type' => 'select', 'label' => 'Prefix', 'required' => true, 'placeholder' => 'Choose a prefix', 'required_message' => 'Choose a prefix for the sell numbers.',
+                'name' => 'prefix_id', 'type' => 'select', 'label' => 'Prefix', 'required' => true, 'tip' => Tips::PREFIX, 'placeholder' => 'Choose a prefix', 'required_message' => 'Choose a prefix for the sell numbers.',
                 'options' => array_map(fn($p) => [(int) $p['id'], $p['code'] . ' — ' . $p['label'] . ($p['description'] ? ' · ' . $p['description'] : '')], $prefixes),
                 'default' => $project['default_prefix_id'],
             ]]);
             $allowed = !empty($state['prefix_id']) ? $this->app->db->all('SELECT s.id, s.code, s.label FROM chroma_code_prefix_suffixes ps JOIN chroma_code_suffixes s ON s.id = ps.suffix_id WHERE ps.prefix_id = ? AND s.active = 1 ORDER BY s.sort_order', [(int) $state['prefix_id']]) : [];
             if ($allowed) {
                 $steps[] = new Step('suffix', 'Add a suffix?', 'Applies to all of them. "None" is the usual answer.', [[
-                    'name' => 'suffix_id', 'type' => 'radio', 'label' => 'Suffix', 'default' => '',
-                    'options' => array_merge([['', '(none)', 'Plain numbers under this prefix.']], array_map(fn($s) => [(int) $s['id'], $s['code'], $s['label']], $allowed)),
+                    'name' => 'suffix_id', 'type' => 'radio', 'label' => 'Suffix', 'default' => '', 'tip' => Tips::SUFFIX,
+                    'options' => array_merge([['', '(none)', 'Just the numbers, no suffix.']], array_map(fn($s) => [(int) $s['id'], $s['code'], $s['label']], $allowed)),
                 ]]);
             }
         }

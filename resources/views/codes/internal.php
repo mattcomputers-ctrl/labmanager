@@ -24,6 +24,10 @@ if (!$void && can('codes.void')) {
     'actions' => $actions,
 ]) ?>
 
+<?php if (!$void && !can('codes.void')): ?>
+  <?= component('callout', ['type' => 'info', 'title' => 'Made a mistake?', 'body' => 'Codes are never deleted or reused. Ask an administrator to void this E number; it then stays in the logs, greyed out, with the reason.']) ?>
+  <div class="mb-4"></div>
+<?php endif; ?>
 <?php if ($void): ?>
   <?= component('callout', ['type' => 'danger', 'title' => 'This E number was voided' . ($code['voided_at'] ? ' on ' . fmt_datetime($code['voided_at']) : '') . ($code['voided_by_name'] ? ' by ' . $code['voided_by_name'] : ''), 'body' => $code['void_reason'] ?: 'No reason was recorded.']) ?>
   <div class="mb-4"></div>

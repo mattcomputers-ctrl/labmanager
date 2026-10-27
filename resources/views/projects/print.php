@@ -36,8 +36,9 @@ $pid = (int) $project['id'];
     <?php foreach ($items as $it): ?>
       <div class="formula-card">
         <div class="fc-codes">
-          <?php if ($it['sell_display']): ?><span class="fc-sell"><?= e($it['sell_display']) ?></span><?php else: ?><span class="fc-none">No sell number yet</span><?php endif; ?>
-          <span class="fc-e"><?= e($it['internal_display'] ?: 'no E#') ?></span>
+          <?php /* A voided code stays on the card but is struck through and labelled, so a printed card never passes a dead code off as live. */ ?>
+          <?php if ($it['sell_display']): ?><span class="fc-sell<?= (int) $it['sell_voided'] === 1 ? ' fc-void' : '' ?>"><?= e($it['sell_display']) ?></span><?php if ((int) $it['sell_voided'] === 1): ?><span class="fc-void-label">voided</span><?php endif; ?><?php else: ?><span class="fc-none">No sell number yet</span><?php endif; ?>
+          <span class="fc-e<?= $it['internal_display'] && (int) $it['internal_voided'] === 1 ? ' fc-void' : '' ?>"><?= e($it['internal_display'] ?: 'no E#') ?></span><?php if ($it['internal_display'] && (int) $it['internal_voided'] === 1): ?><span class="fc-void-label">voided</span><?php endif; ?>
           <?php if ($it['hex_color']): ?><span class="fc-chip" style="background:<?= e($it['hex_color']) ?>" title="<?= e($it['hex_color']) ?>"></span><?php endif; ?>
         </div>
         <div class="fc-desc"><?= (int) $it['sequence'] ?>. <?= e($it['description']) ?><?= $it['pantone'] && !str_contains(mb_strtolower((string) $it['description']), mb_strtolower((string) $it['pantone'])) ? ' · Pantone ' . e($it['pantone']) : '' ?></div>

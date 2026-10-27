@@ -128,7 +128,8 @@ final class ProjectsController extends ProjectController
             'items' => $items,
             'customerLabel' => $customerLabel,
             'maxItems' => $this->projects->maxItems(),
-            'easyUrl' => url('/mode', ['set' => 'easy', 'return' => '/wizard/new-project']),
+            // The page's Easy link submits the form's values into the wizard (data-mode-carry in the view); this is the no-JS fallback.
+            'easyUrl' => url('/mode', ['set' => 'easy', 'return' => url('/wizard/new-project', array_filter(array_diff_key($defaults, ['expert' => 1]), fn($v) => is_string($v) && $v !== '') + ['jump' => 1])]),
         ] + $this->referenceLists());
     }
 
@@ -188,7 +189,7 @@ final class ProjectsController extends ProjectController
         }
         foreach ($this->projects->types()->fields($type) as $spec) {
             $name = $spec['name'];
-            $f = ['name' => $name, 'label' => $spec['short'], 'long_label' => $spec['label'], 'type' => $spec['type'], 'help' => $spec['help'], 'later' => $spec['later'], 'options' => []];
+            $f = ['name' => $name, 'label' => $spec['short'], 'long_label' => $spec['label'], 'type' => $spec['type'], 'help' => $spec['help'], 'tip' => $spec['tip'] ?? null, 'later' => $spec['later'], 'options' => []];
             switch ($spec['type']) {
                 case 'textarea':
                     $f['value'] = (string) ($project[$name] ?? '');

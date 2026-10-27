@@ -18,7 +18,7 @@ The suffix never starts a new count: `T2445`, `T2446UV` and `T2447` all come fro
 
 ## Looking up a code
 
-Open **Code lookup** (or type in the search box at the top of any page) and type what you have:
+Open **Code lookup** (or type in the search box at the top of any page; on a phone it is inside the ☰ menu) and type what you have:
 
 - any spelling of a sell number — `y-1000`, `Y 1000` and `y1000` all find `Y1000`;
 - an E number as `E6374`, `E6374-10` or just `6374`;
@@ -51,7 +51,7 @@ Open the sell number and press **Link to an E number** (or **Move to another E n
 
 ## Made a mistake?
 
-Codes are never deleted or reused. Instead, open the code and press **Void** with a short reason. It stays in the logs, greyed out, so anyone looking it up sees what happened. Voiding an E number does not void its sell numbers; void those separately if they are wrong too.
+Codes are never deleted or reused. Instead the code is **voided** with a short reason: it stays in the logs, greyed out, so anyone looking it up sees what happened. Voiding needs the *void codes* permission, which administrators have: if you do not see a **Void** button on the code page, ask an administrator to void it for you (the code page says so). Voiding an E number does not void its sell numbers; void those separately if they are wrong too.
 
 ## Notes and descriptions
 

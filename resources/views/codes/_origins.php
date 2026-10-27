@@ -1,4 +1,5 @@
-<?php /** Where a code came from. @var array $origins */ ?>
+<?php /** Where a code came from. @var array $origins */
+$visibility = new \Chroma\Domain\Projects\Visibility(app()->db, app()->auth); ?>
 <div class="card">
   <div class="card-head"><h2>Where it came from</h2></div>
   <div class="card-body">
@@ -6,7 +7,7 @@
       <p class="muted mb-0">Not attached to a project. Codes assigned with Quick assign or entered by hand (resale items, relabels, legacy rows) show up this way.</p>
     <?php else: ?>
     <ul class="list">
-      <?php foreach ($origins as $o): $hidden = (int) $o['confidential'] === 1 && !can('projects.view_confidential'); ?>
+      <?php foreach ($origins as $o): $hidden = !$visibility->canViewOrigin($o); ?>
         <li><span class="grow">
           <?php if ($hidden): ?><strong>A confidential project</strong><?php else: ?>
           <a href="/projects/<?= (int) $o['project_id'] ?>"><strong>Project <?= (int) $o['project_number'] ?></strong><?= $o['project_title'] ? ' · ' . e($o['project_title']) : '' ?></a>

@@ -37,6 +37,10 @@ final class NewProjectWizard extends Wizard
         return [Permissions::PROJECTS_CREATE];
     }
 
+    /**
+     * Seeds the wizard from query parameters: the Expert page's Easy link sends every field it holds
+     * (the same names the Expert form posts), so switching modes mid-task keeps what was typed.
+     */
     public function initialState(Request $request): array
     {
         $state = [];
@@ -46,10 +50,42 @@ final class NewProjectWizard extends Wizard
         if ($c = $request->int('customer_id')) {
             $state['customer_id'] = $c;
             $state['customer_id_label'] = (string) ($this->app->db->value('SELECT name FROM chroma_customers WHERE id = ?', [$c]) ?? '');
+        } elseif (($text = $request->str('customer_text') ?: $request->str('customer_id_text')) !== '') {
+            $state['customer_id'] = '';
+            $state['customer_id_text'] = $text;
+            $state['customer_id_label'] = $text;
         }
-        foreach (['title', 'description', 'problem_statement', 'goal'] as $k) {
-            if ($v = $request->str($k)) {
+        foreach (['title', 'description', 'problem_statement', 'goal', 'date_submitted', 'target_date', 'stage_id', 'default_ink_series_id', 'default_substrate', 'default_coating_id'] as $k) {
+            if (($v = $request->str($k)) !== '') {
                 $state[$k] = $v;
+            }
+        }
+        if (($u = $request->int('assigned_user_id')) !== null) {
+            $state['assigned_user_id'] = (string) $u;
+            $state['assigned_user_id_label'] = $this->lookupLabel('chroma_users', 'display_name', $u) ?? '';
+        }
+        if ($request->str('confidential') !== '') {
+            $state['confidential'] = $request->bool('confidential') ? '1' : '0';
+        }
+        $n = 0;
+        foreach ($request->arr('items') as $it) {
+            if (!is_array($it) || $n >= $this->cap()) {
+                continue;
+            }
+            $desc = trim((string) ($it['description'] ?? ''));
+            $ref = trim((string) ($it['existing_ref'] ?? ''));
+            if ($desc === '' && $ref === '') {
+                continue;
+            }
+            $n++;
+            $state['item_' . $n . '_description'] = $desc;
+            $state['item_' . $n . '_pantone'] = trim((string) ($it['pantone'] ?? ''));
+            if ($ref !== '') {
+                $state['item_' . $n . '_existing_ref'] = $ref;
+                $state['item_' . $n . '_existing_ref_label'] = trim((string) ($it['existing_label'] ?? '')) ?: $this->codeLabel($ref);
+            }
+            if ($n > 1) {
+                $state['item_' . ($n - 1) . '_more'] = 'yes';
             }
         }
         return $state;
@@ -76,13 +112,19 @@ final class NewProjectWizard extends Wizard
         return $n;
     }
 
+    /** The type decides which questions follow, so until it is chosen the first screen only knows itself. */
+    public function stepCountKnown(array $state): bool
+    {
+        return $this->type($state) !== null;
+    }
+
     public function steps(array $state): array
     {
         $types = $this->projects()->types()->all();
         $steps = [new Step('type', 'What kind of project is this?', 'Pick the one that fits. The type decides which questions come next.', [[
             'name' => 'type', 'type' => 'radio', 'label' => 'Project type', 'required' => true, 'required_message' => 'Pick a project type to go on.',
             'options' => array_values(array_map(fn($t) => [$t['code'], $t['label'], $t['description']], $types)),
-        ]])];
+        ]], nextLabel: 'Next ›')];
         $type = $this->type($state);
         if ($type === null) {
             return $steps;
@@ -121,7 +163,7 @@ final class NewProjectWizard extends Wizard
             $who[] = ['name' => 'stage_id', 'type' => 'select', 'label' => 'Stage', 'placeholder' => 'Not set yet', 'options' => array_map(fn($s) => [(int) $s['id'], $s['label']], $type['stages']), 'help' => $byName['stage_id']['help']];
         }
         if (isset($byName['confidential'])) {
-            $who[] = ['name' => 'confidential', 'type' => 'checkbox', 'label' => 'Confidential', 'help' => $byName['confidential']['help']];
+            $who[] = ['name' => 'confidential', 'type' => 'checkbox', 'label' => 'Confidential', 'help' => $byName['confidential']['help'], 'tip' => $byName['confidential']['tip'] ?? null];
         }
         if ($who) {
             $steps[] = new Step('who', 'Who is working on it, and when?', '', $who);
@@ -155,19 +197,22 @@ final class NewProjectWizard extends Wizard
             if ($kind === 'existing_product') {
                 $fields[] = ['name' => 'item_' . $i . '_existing_ref', 'type' => 'lookup', 'label' => 'Which product?', 'lookup' => '/api/codes/search?q=', 'placeholder' => 'E number or sell number', 'help' => 'Type an E number or sell number and pick it from the list. Leave blank if it has no code yet.'];
                 $fields[] = ['name' => 'item_' . $i . '_description', 'type' => 'text', 'label' => 'Description', 'maxlength' => 500, 'help' => 'Fills in from the code you pick; type one if there is no code.'];
+            } elseif ($kind === 'color') {
+                // Two fields that must not look like the same question: the name the lab uses, then the optional Pantone reference.
+                $fields[] = ['name' => 'item_' . $i . '_description', 'type' => 'text', 'label' => 'What do you call this color?', 'maxlength' => 500, 'placeholder' => 'e.g. Logo brown', 'help' => 'How it appears on the job sheet.', 'required' => $i === 1, 'required_message' => 'Name the first color to go on. You can add more after this one.'];
+                $fields[] = ['name' => 'item_' . $i . '_pantone', 'type' => 'text', 'label' => 'Pantone or reference', 'maxlength' => 60, 'optional_text' => true, 'placeholder' => 'e.g. 300 C', 'help' => 'The Pantone number or the customer\'s own reference, if there is one.'];
             } else {
-                $fields[] = ['name' => 'item_' . $i . '_description', 'type' => 'text', 'label' => ucfirst($singular) . ' ' . $i, 'maxlength' => 500, 'placeholder' => $kind === 'color' ? 'e.g. Pantone 300 C' : 'e.g. Trial 1: 2% more wax', 'required' => $i === 1, 'required_message' => 'Describe the first ' . $singular . ' to go on. You can add more after this one.'];
-                if ($kind === 'color') {
-                    $fields[] = ['name' => 'item_' . $i . '_pantone', 'type' => 'text', 'label' => 'Pantone or reference', 'maxlength' => 60, 'optional_text' => true, 'placeholder' => 'e.g. 300 C'];
-                }
+                $fields[] = ['name' => 'item_' . $i . '_description', 'type' => 'text', 'label' => ucfirst($singular) . ' ' . $i, 'maxlength' => 500, 'placeholder' => 'e.g. Trial ' . $i . ': 2% more wax', 'required' => $i === 1, 'required_message' => 'Describe the first ' . $singular . ' to go on. You can add more after this one.'];
             }
+            $by = null;
             if ($i < $this->cap()) {
                 $fields[] = ['name' => 'item_' . $i . '_more', 'type' => 'radio', 'label' => 'Add another ' . $singular . '?', 'default' => 'no', 'options' => [['no', 'No, that is all for now'], ['yes', 'Yes, add another']]];
+                $by = ['field' => 'item_' . $i . '_more', 'labels' => ['yes' => 'Next: ' . $singular . ' ' . ($i + 1) . ' ›', 'no' => 'Review ›']];
             }
             $intro = $i === 1
                 ? 'A project can hold up to ' . $this->cap() . ' ' . mb_strtolower((string) $type['item_label']) . '. Add the first one now; you can add the rest here or on the project page.'
                 : '';
-            $steps[] = new Step('item_' . $i, $i === 1 ? 'What is the first ' . $singular . '?' : ucfirst($singular) . ' ' . $i . ' of up to ' . $this->cap(), $intro, $fields);
+            $steps[] = new Step('item_' . $i, $i === 1 ? 'What is the first ' . $singular . '?' : ucfirst($singular) . ' ' . $i . ' of up to ' . $this->cap(), $intro, $fields, nextLabel: $by === null ? 'Review ›' : null, nextLabelBy: $by);
         }
         return $steps;
     }
@@ -253,7 +298,11 @@ final class NewProjectWizard extends Wizard
         $type = $this->type($state);
         $rows = [['label' => 'Type', 'value' => (string) ($type['label'] ?? ''), 'step' => 'type']];
         if ($type && (int) $type['has_customer'] === 1) {
-            $rows[] = ['label' => 'Customer', 'value' => (string) ($state['customer_id_label'] ?: ($state['customer_id_text'] ?? '')), 'step' => 'customer'];
+            $customer = (string) ($state['customer_id_label'] ?: ($state['customer_id_text'] ?? ''));
+            if (empty($state['customer_id']) && !empty($state['customer_id_text'])) {
+                $customer .= ' (new customer, will be added)';
+            }
+            $rows[] = ['label' => 'Customer', 'value' => $customer, 'step' => 'customer'];
         }
         $rows[] = ['label' => 'Title', 'value' => (string) ($state['title'] ?? ''), 'step' => 'about'];
         foreach (['description' => 'Description', 'problem_statement' => 'Problem', 'goal' => 'Goal'] as $k => $l) {

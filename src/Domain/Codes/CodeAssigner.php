@@ -159,7 +159,8 @@ final class CodeAssigner
             }
             $id = $this->insertInternal($db, $parsed['number'], $parsed['version'], $description, $data, $actorId, $source);
             $row = $this->internalRow($id);
-            $this->audit->record('code.manual_internal', 'chroma_internal_codes', $id, null, $row, 'Entered by hand: ' . $row['display'], $actorId);
+            [$action, $note] = self::entryAudit('internal', $source, $row['display']);
+            $this->audit->record($action, 'chroma_internal_codes', $id, null, $row, $note, $actorId);
             $this->linkItem($db, $data['project_item_id'] ?? null, 'internal_code_id', $id, $row['display'], $actorId);
             return $row;
         });
@@ -211,10 +212,25 @@ final class CodeAssigner
                 $db->update('chroma_code_prefixes', ['next_number' => $parsed['number'] + 1, 'updated_at' => $db->now()], ['id' => (int) $prefix['id']]);
             }
             $row = $this->sellRow($id);
-            $this->audit->record('code.manual_sell', 'chroma_sell_numbers', $id, null, $row, 'Entered by hand: ' . $row['display'], $actorId);
+            [$action, $note] = self::entryAudit('sell', $source, $row['display']);
+            $this->audit->record($action, 'chroma_sell_numbers', $id, null, $row, $note, $actorId);
             $this->linkItem($db, $data['project_item_id'] ?? null, 'sell_number_id', $id, $row['display'], $actorId);
             return $row;
         });
+    }
+
+    /**
+     * Audit action and note for a code entered with a specific number: the
+     * legacy import and a person typing it in are different kinds of
+     * provenance and the history must say which it was.
+     * @return array{0:string,1:string} [action, note]
+     */
+    private static function entryAudit(string $kind, string $source, string $display): array
+    {
+        if ($source === 'import') {
+            return ['code.import_' . $kind, 'Imported from the spreadsheets: ' . $display];
+        }
+        return ['code.manual_' . $kind, 'Entered by hand: ' . $display];
     }
 
     // ------------------------------------------------------------------
@@ -237,7 +253,7 @@ final class CodeAssigner
             }
             $db->update('chroma_internal_codes', ['voided' => 1, 'void_reason' => mb_substr($reason, 0, 500), 'voided_at' => $db->now(), 'voided_by' => $actorId, 'updated_at' => $db->now()], ['id' => $id]);
             $after = $db->one('SELECT * FROM chroma_internal_codes WHERE id = ?', [$id]);
-            $this->audit->record('code.void_internal', 'chroma_internal_codes', $id, $before, $after, $reason, $actorId);
+            $this->audit->record('code.void_internal', 'chroma_internal_codes', $id, $before, $after, 'Voided ' . CodeFormat::internal((int) $before['number'], $before['version']) . ': ' . $reason, $actorId);
         });
     }
 
@@ -257,7 +273,7 @@ final class CodeAssigner
             }
             $db->update('chroma_sell_numbers', ['voided' => 1, 'void_reason' => mb_substr($reason, 0, 500), 'voided_at' => $db->now(), 'voided_by' => $actorId, 'updated_at' => $db->now()], ['id' => $id]);
             $after = $db->one('SELECT * FROM chroma_sell_numbers WHERE id = ?', [$id]);
-            $this->audit->record('code.void_sell', 'chroma_sell_numbers', $id, $before, $after, $reason, $actorId);
+            $this->audit->record('code.void_sell', 'chroma_sell_numbers', $id, $before, $after, 'Voided ' . $this->sellRow($id)['display'] . ': ' . $reason, $actorId);
         });
     }
 

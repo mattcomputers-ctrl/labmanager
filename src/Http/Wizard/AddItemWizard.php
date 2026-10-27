@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace Chroma\Http\Wizard;
 
+use Chroma\Http\Tips;
 use Chroma\Core\NotFoundException;
 use Chroma\Core\Permissions;
 use Chroma\Core\Request;
@@ -91,10 +92,12 @@ final class AddItemWizard extends Wizard
             $what[] = ['name' => 'existing_ref', 'type' => 'lookup', 'label' => 'Which product?', 'lookup' => '/api/codes/search?q=', 'placeholder' => 'E number or sell number', 'help' => 'Type an E number or sell number and pick it from the list.'];
             $what[] = ['name' => 'description', 'type' => 'text', 'label' => 'Description', 'maxlength' => 500, 'help' => 'Fills in from the code you pick; type one if it has no code.'];
         } else {
-            $what[] = ['name' => 'description', 'type' => 'text', 'label' => ucfirst($singular) . ' description', 'required' => true, 'maxlength' => 500, 'placeholder' => $kind === 'color' ? 'e.g. Pantone 300 C' : 'e.g. Trial 3: 2% more wax', 'required_message' => 'Describe the ' . $singular . ' in a few words.'];
             if ($kind === 'color') {
-                $what[] = ['name' => 'pantone', 'type' => 'text', 'label' => 'Pantone or reference', 'maxlength' => 60, 'optional_text' => true];
-                $what[] = ['name' => 'hex_color', 'type' => 'text', 'label' => 'Color (hex)', 'maxlength' => 7, 'optional_text' => true, 'placeholder' => '#1F6FEB', 'help' => 'If you know the hex value a color chip is shown next to the name.'];
+                $what[] = ['name' => 'description', 'type' => 'text', 'label' => 'What do you call this color?', 'required' => true, 'maxlength' => 500, 'placeholder' => 'e.g. Logo brown', 'help' => 'How it appears on the job sheet.', 'required_message' => 'Name the color in a few words.'];
+                $what[] = ['name' => 'pantone', 'type' => 'text', 'label' => 'Pantone or reference', 'maxlength' => 60, 'optional_text' => true, 'placeholder' => 'e.g. 300 C', 'help' => 'The Pantone number or the customer\'s own reference, if there is one.'];
+                $what[] = ['name' => 'hex_color', 'type' => 'text', 'label' => 'Color swatch', 'maxlength' => 7, 'optional_text' => true, 'placeholder' => '#8B5A2B', 'help' => 'A web colour code like #8B5A2B, if you have one; it draws a small swatch next to the name.'];
+            } else {
+                $what[] = ['name' => 'description', 'type' => 'text', 'label' => ucfirst($singular) . ' description', 'required' => true, 'maxlength' => 500, 'placeholder' => 'e.g. Trial 3: 2% more wax', 'required_message' => 'Describe the ' . $singular . ' in a few words.'];
             }
         }
         $steps = [new Step('what', $kind === 'existing_product' ? 'Which product is involved?' : 'What is the ' . $singular . '?', 'Project ' . $project['project_number'] . ' · ' . $project['title'], $what)];
@@ -114,7 +117,7 @@ final class AddItemWizard extends Wizard
         }
         if ($kind === 'color') {
             $details[] = ['name' => 'proof_count', 'type' => 'number', 'label' => 'Proofs made so far', 'min' => 0, 'max' => 999, 'default' => 0, 'help' => 'Leave at 0 if none yet.'];
-            $details[] = ['name' => 'is_digital_match', 'type' => 'checkbox', 'label' => 'Digital match', 'help' => 'Matched digitally; the formula card will say "Digital Match".'];
+            $details[] = ['name' => 'is_digital_match', 'type' => 'checkbox', 'label' => 'Digital match', 'tip' => Tips::DIGITAL_MATCH, 'help' => 'Matched digitally; the formula card will say "Digital Match".'];
         }
         $details[] = ['name' => 'notes', 'type' => 'textarea', 'label' => 'Notes', 'rows' => 3, 'optional_text' => true];
         $steps[] = new Step('details', 'Any details?', 'Everything here is optional. Defaults come from the project.', $details);

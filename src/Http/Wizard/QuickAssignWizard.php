@@ -94,37 +94,154 @@ final class QuickAssignWizard extends Wizard
         return $state;
     }
 
+    /**
+     * Prefixes split into the everyday ones and the inherited/legacy ones,
+     * which the prefix screen keeps folded away.
+     * @return array{everyday:list<array<string,mixed>>,other:list<array<string,mixed>>}
+     */
+    public function prefixGroups(): array
+    {
+        $out = ['everyday' => [], 'other' => []];
+        foreach ($this->prefixChoices() as $p) {
+            $out[in_array((string) $p['tag'], ['inherited', 'legacy'], true) ? 'other' : 'everyday'][] = $p;
+        }
+        return $out;
+    }
+
+    /** What the shared prefix screen (codes/wizard-prefix) shows above the cards and starts on. @return array{default:?int,context:?array{label:string,description:string,note:string}} */
+    public function prefixScreen(array $state): array
+    {
+        $product = $this->productFor($state);
+        return [
+            'default' => $this->defaultPrefixId($product),
+            'context' => $product ? ['label' => $product['label'], 'description' => (string) $product['description'], 'note' => 'Its current prefix is picked for you; change it if the new code is a different kind.'] : null,
+        ];
+    }
+
+    /** The prefix of the product's current sell number, so the prefix screen starts on it (Y1727 → Y). */
+    public function defaultPrefixId(?array $product): ?int
+    {
+        if ($product === null) {
+            return null;
+        }
+        $candidates = $product['sell'] ? array_merge([$product['sell']], $product['sells']) : $product['sells'];
+        foreach ($candidates as $s) {
+            if ((int) $s['voided'] === 0 && (int) $s['prefix_retired'] === 0) {
+                return (int) $s['prefix_id'];
+            }
+        }
+        return null;
+    }
+
+    /** What the user needs: the answer given, or the only possible answer when there is just one. */
+    public function wantFor(array $state, ?array $product): string
+    {
+        $wants = $this->wantsFor($product);
+        $want = (string) ($state['want'] ?? '');
+        if (isset($wants[$want])) {
+            return $want;
+        }
+        return count($wants) === 1 ? (string) array_key_first($wants) : '';
+    }
+
+    /** Suffixes the chosen prefix allows. @return list<array{id:int,code:string,label:string}> */
+    public function suffixesFor(array $state): array
+    {
+        foreach ($this->prefixChoices() as $p) {
+            if ($p['id'] === (int) ($state['prefix_id'] ?? 0)) {
+                return $p['suffixes'];
+            }
+        }
+        return [];
+    }
+
+    /** Which code is wanted decides whether a prefix is asked, so the count is open until that is answered (or implied). */
+    public function stepCountKnown(array $state): bool
+    {
+        return $this->wantFor($state, $this->productFor($state)) !== '';
+    }
+
+    /** One question per screen: product → what → prefix → suffix → description and reason → the optional extras. */
     public function steps(array $state): array
     {
         $this->requireAny();
         $product = $this->productFor($state);
-        return [
-            new Step(
-                key: 'product',
-                title: 'Which product is this for?',
-                intro: 'Most of the time you are adding another sell number to a product that already has one: a relabel, a customer-specific code or a new version. Search by E number, sell number or description.',
-                fields: [
-                    ['name' => 'product_mode', 'type' => 'radio', 'label' => 'Product', 'required' => true, 'options' => [
-                        ['existing', 'An existing product', 'Add a code to something that already has an E number or a sell number.'],
-                        ['new', 'A brand-new product', 'Nothing has been coded for it yet (for example a resale item or a purchased product).'],
-                    ]],
-                    ['name' => 'product', 'type' => 'lookup', 'label' => 'Find the product', 'lookup' => '/api/codes/search?q=', 'placeholder' => 'E number, sell number or a word from the description'],
-                ],
-                template: 'codes/wizard-product',
-            ),
-            new Step(
-                key: 'code',
+        $wants = $this->wantsFor($product);
+        $want = $this->wantFor($state, $product);
+        $steps = [new Step(
+            key: 'product',
+            title: 'Which product is this for?',
+            intro: 'Most of the time you are adding another sell number to a product that already has one: a relabel, a customer-specific code or a new version. Search by E number, sell number or description.',
+            fields: [
+                ['name' => 'product_mode', 'type' => 'radio', 'label' => 'Product', 'required' => true, 'options' => [
+                    ['existing', 'An existing product', 'Add a code to something that already has an E number or a sell number.'],
+                    ['new', 'A brand-new product', 'Nothing has been coded for it yet (for example a resale item or a purchased product).'],
+                ]],
+                ['name' => 'product', 'type' => 'lookup', 'label' => 'Find the product', 'lookup' => '/api/codes/search?q=', 'placeholder' => 'E number, sell number or a word from the description'],
+            ],
+            template: 'codes/wizard-product',
+        )];
+        if (count($wants) !== 1) {
+            $descriptions = [
+                'sell' => $product ? 'Both sell numbers stay without an E number.' : 'The code the customer sees, for example a resale item.',
+                'internal' => $product ? 'It has none yet; the sell number will point at the new E number.' : 'An internal formula code with no sell number yet.',
+                'both' => $product ? 'The existing sell number and the new one will share the new E number.' : 'Assigned together; the sell number is linked to the new E number.',
+            ];
+            $steps[] = new Step(
+                key: 'want',
                 title: $product ? 'Which code does ' . $product['label'] . ' need?' : 'Which code do you need?',
-                intro: $product ? 'Chroma gives out the next free number. You only choose the prefix, an optional suffix and the reason.' : 'Chroma gives out the next free number under the prefix you choose.',
-                fields: [
-                    ['name' => 'want', 'required' => true], ['name' => 'prefix_id'], ['name' => 'suffix_id'], ['name' => 'description', 'maxlength' => 500],
-                    ['name' => 'reason'], ['name' => 'reason_text', 'maxlength' => 500], ['name' => 'original_customer_id', 'type' => 'lookup'],
-                    ['name' => 'resale'], ['name' => 'vendor_name', 'maxlength' => 200], ['name' => 'vendor_code', 'maxlength' => 100],
-                    ['name' => 'notes', 'maxlength' => 2000],
-                ],
-                template: 'codes/wizard-code',
-            ),
+                intro: 'Chroma gives out the next free number; you only say what kind.',
+                fields: [['name' => 'want', 'type' => 'radio', 'label' => 'Code', 'required' => true, 'required_message' => 'Choose what you need from the list.',
+                    'options' => array_map(fn($k, $label) => [$k, $label, $descriptions[$k] ?? ''], array_keys($wants), $wants)]],
+            );
+        }
+        if ($want === '') {
+            return $steps;
+        }
+        if ($want !== 'internal') {
+            $steps[] = new Step(
+                key: 'prefix',
+                title: 'Which prefix?',
+                intro: 'The prefix says what kind of product this is. The number after it is given out automatically; the next free one is shown on each card.',
+                fields: [['name' => 'prefix_id', 'required' => true]],
+                template: 'codes/wizard-prefix',
+            );
+            $suffixes = $this->suffixesFor($state);
+            if ($suffixes !== []) {
+                $steps[] = new Step(
+                    key: 'suffix',
+                    title: 'Add a suffix?',
+                    intro: 'Only if this is a special version. "None" is the usual answer; a suffix never starts a new count.',
+                    fields: [['name' => 'suffix_id', 'type' => 'radio', 'label' => 'Suffix', 'default' => '', 'tip' => \Chroma\Http\Tips::SUFFIX,
+                        'options' => array_merge([['', '(none)', 'Just the number, no suffix.']], array_map(fn($s) => [$s['id'], $s['code'], $s['label']], $suffixes))]],
+                );
+            }
+        }
+        $steps[] = new Step(
+            key: 'details',
+            title: $want === 'internal' ? 'How should the E number be described?' : ($product ? 'Why does ' . $product['label'] . ' need another sell number?' : 'How should the code be described?'),
+            intro: 'The description is what people see in code lookup, so keep it short and searchable.',
+            fields: [['name' => 'description', 'required' => true, 'maxlength' => 500], ['name' => 'reason'], ['name' => 'reason_text', 'maxlength' => 500]],
+            template: 'codes/wizard-quick-details',
+        );
+        $extras = [
+            ['name' => 'original_customer_id', 'type' => 'lookup', 'label' => 'Customer', 'optional_text' => true, 'lookup' => '/api/customers?q=', 'placeholder' => 'Start typing the customer name',
+                'help' => $product && $product['customer'] ? 'Leave blank to keep ' . $product['customer'] . '.' : 'Leave blank if there is no particular customer.'],
         ];
+        if ($want !== 'sell') {
+            $extras[] = ['name' => 'resale', 'type' => 'checkbox', 'label' => 'Purchased for resale', 'help' => 'Bought in rather than made here.'];
+            $extras[] = ['name' => 'vendor_name', 'label' => 'Vendor', 'optional_text' => true, 'maxlength' => 200];
+            $extras[] = ['name' => 'vendor_code', 'label' => "Vendor's code", 'optional_text' => true, 'maxlength' => 100];
+        }
+        $extras[] = ['name' => 'notes', 'type' => 'textarea', 'label' => 'Notes', 'optional_text' => true, 'rows' => 2, 'maxlength' => 2000, 'help' => 'Anything worth knowing about this code. Kept on the code page.'];
+        $steps[] = new Step(
+            key: 'extras',
+            title: 'Anything else to record?',
+            intro: 'All of this is optional. Press Review to skip it.',
+            fields: $extras,
+            nextLabel: 'Review',
+        );
+        return $steps;
     }
 
     public function validateStep(Step $step, array $input, array $state): array
@@ -146,20 +263,48 @@ final class QuickAssignWizard extends Wizard
                 // A different product: forget answers that depended on the old one.
                 $out['want'] = '';
                 $out['description'] = '';
+                $out['prefix_id'] = '';
+                $out['suffix_id'] = '';
             }
             return $out;
         }
-        if ($step->key === 'code') {
-            $product = ($state['product_mode'] ?? '') === 'existing' ? $this->quick()->product((string) ($state['product'] ?? '')) : null;
-            $allowed = QuickAssign::wantsFor($product);
-            $v = new Validator($input);
+        $product = $this->productFor($state);
+        if ($step->key === 'want') {
             $want = (string) ($input['want'] ?? '');
-            if (!isset($allowed[$want])) {
-                $v->error('want', 'Choose what you need from the list.');
+            if (!isset($this->wantsFor($product)[$want])) {
+                $this->fail(['want' => 'Choose what you need from the list.']);
             }
-            if ($want !== 'internal' && (int) ($input['prefix_id'] ?? 0) <= 0) {
-                $v->error('prefix_id', 'Choose a prefix. The prefix says what kind of product this is.');
+            $out = ['want' => $want];
+            if ($want === 'internal') {
+                $out['prefix_id'] = '';
+                $out['suffix_id'] = '';
+                $out['reason'] = '';
+                $out['reason_text'] = '';
             }
+            return $out;
+        }
+        if ($step->key === 'prefix') {
+            $id = (int) ($input['prefix_id'] ?? 0);
+            $known = array_filter($this->prefixChoices(), fn($p) => $p['id'] === $id);
+            if ($id <= 0 || $known === []) {
+                $this->fail(['prefix_id' => 'Choose a prefix. The prefix says what kind of product this is.']);
+            }
+            $out = ['prefix_id' => (string) $id];
+            if ((string) ($state['prefix_id'] ?? '') !== (string) $id) {
+                $out['suffix_id'] = '';
+            }
+            return $out;
+        }
+        if ($step->key === 'suffix') {
+            $suffix = trim((string) ($input['suffix_id'] ?? ''));
+            if ($suffix !== '' && !in_array((int) $suffix, array_map(fn($s) => $s['id'], $this->suffixesFor($state)), true)) {
+                $this->fail(['suffix_id' => 'Pick one of the suffixes this prefix allows, or "(none)".']);
+            }
+            return ['suffix_id' => $suffix === '' ? '' : (string) (int) $suffix];
+        }
+        $want = $this->wantFor($state, $product);
+        if ($step->key === 'details') {
+            $v = new Validator($input);
             $description = trim((string) ($input['description'] ?? ''));
             if ($description === '' && $product !== null) {
                 $description = (string) $product['description'];
@@ -168,7 +313,6 @@ final class QuickAssignWizard extends Wizard
                 $v->error('description', 'Give the code a short description so people can find it later.');
             }
             $v->maxLength('description', 500);
-            $v->maxLength('notes', 2000);
             if ($want !== 'internal') {
                 if ($product !== null && trim((string) ($input['reason'] ?? '')) === '') {
                     $v->error('reason', 'Say why this product needs another sell number. Pick a reason from the list.');
@@ -177,17 +321,24 @@ final class QuickAssignWizard extends Wizard
                 if (($input['reason'] ?? '') === 'other' && trim((string) ($input['reason_text'] ?? '')) === '') {
                     $v->error('reason_text', 'Say in a few words why this code is needed.');
                 }
+                $v->maxLength('reason_text', 500);
             }
+            $v->fail();
+            return [
+                'description' => $description,
+                'reason' => $want === 'internal' ? '' : trim((string) ($input['reason'] ?? '')),
+                'reason_text' => $want === 'internal' ? '' : trim((string) ($input['reason_text'] ?? '')),
+            ];
+        }
+        if ($step->key === 'extras') {
+            $v = new Validator($input);
+            $v->maxLength('notes', 2000);
+            $v->maxLength('vendor_name', 200);
+            $v->maxLength('vendor_code', 100);
             $v->fail();
             $customerId = (int) ($input['original_customer_id'] ?? 0);
             $customerName = $customerId > 0 ? (string) $this->app->db->value('SELECT name FROM chroma_customers WHERE id = ?', [$customerId]) : '';
             return [
-                'want' => $want,
-                'prefix_id' => $want === 'internal' ? '' : (string) (int) ($input['prefix_id'] ?? 0),
-                'suffix_id' => $want === 'internal' ? '' : trim((string) ($input['suffix_id'] ?? '')),
-                'description' => $description,
-                'reason' => $want === 'internal' ? '' : trim((string) ($input['reason'] ?? '')),
-                'reason_text' => trim((string) ($input['reason_text'] ?? '')),
                 'original_customer_id' => $customerName !== '' ? (string) $customerId : '',
                 'original_customer_id_label' => $customerName,
                 'resale' => $want === 'sell' ? '' : (string) ($input['resale'] ?? ''),
@@ -204,10 +355,10 @@ final class QuickAssignWizard extends Wizard
         $quick = $this->quick();
         $product = ($state['product_mode'] ?? '') === 'existing' ? $quick->product((string) ($state['product'] ?? '')) : null;
         $rows = [['label' => 'Product', 'value' => $product ? $product['label'] . ' — ' . $product['description'] : 'A brand-new product', 'step' => 'product']];
-        $want = (string) ($state['want'] ?? '');
-        $rows[] = ['label' => 'What', 'value' => QuickAssign::wantsFor($product)[$want] ?? QuickAssign::WANTS[$want] ?? $want, 'step' => 'code'];
+        $want = $this->wantFor($state, $product);
+        $rows[] = ['label' => 'What', 'value' => QuickAssign::wantsFor($product)[$want] ?? QuickAssign::WANTS[$want] ?? $want, 'step' => count($this->wantsFor($product)) === 1 ? 'product' : 'want'];
         if ($want !== 'sell') {
-            $rows[] = ['label' => 'E number', 'value' => 'Next free: E' . (new CodeAssigner($this->app->db, $this->app->audit))->previewInternal(), 'step' => 'code'];
+            $rows[] = ['label' => 'E number', 'value' => 'Next free: E' . (new CodeAssigner($this->app->db, $this->app->audit))->previewInternal()];
         }
         if ($want !== 'internal') {
             $prefix = null;
@@ -224,25 +375,27 @@ final class QuickAssignWizard extends Wizard
                     }
                 }
             }
-            $rows[] = ['label' => 'Sell number', 'value' => $prefix ? $prefix['code'] . ' — ' . $prefix['label'] . ' (next free: ' . $prefix['next'] . $suffix . ')' : '—', 'step' => 'code'];
-            $rows[] = ['label' => 'Suffix', 'value' => $suffix !== '' ? $suffix : 'none', 'step' => 'code'];
+            $rows[] = ['label' => 'Sell number', 'value' => $prefix ? $prefix['code'] . ' — ' . $prefix['label'] . ' (next free: ' . $prefix['next'] . $suffix . ')' : '—', 'step' => 'prefix'];
+            if ($prefix && $prefix['suffixes'] !== []) {
+                $rows[] = ['label' => 'Suffix', 'value' => $suffix !== '' ? $suffix : 'none', 'step' => 'suffix'];
+            }
             $reason = (string) ($state['reason'] ?? '');
-            $rows[] = ['label' => 'Reason', 'value' => $reason !== '' ? (CodeAssigner::REASONS[$reason] ?? $reason) . (($state['reason_text'] ?? '') !== '' ? ' — ' . $state['reason_text'] : '') : '', 'step' => 'code'];
+            $rows[] = ['label' => 'Reason', 'value' => $reason !== '' ? (CodeAssigner::REASONS[$reason] ?? $reason) . (($state['reason_text'] ?? '') !== '' ? ' — ' . $state['reason_text'] : '') : '', 'step' => 'details'];
         }
-        $rows[] = ['label' => 'Description', 'value' => (string) ($state['description'] ?? ''), 'step' => 'code'];
-        $rows[] = ['label' => 'Customer', 'value' => (string) ($state['original_customer_id_label'] ?? '') ?: ($product['customer'] ?? ''), 'step' => 'code'];
+        $rows[] = ['label' => 'Description', 'value' => (string) ($state['description'] ?? ''), 'step' => 'details'];
+        $rows[] = ['label' => 'Customer', 'value' => (string) ($state['original_customer_id_label'] ?? '') ?: ($product['customer'] ?? ''), 'step' => 'extras'];
         if (($state['notes'] ?? '') !== '') {
-            $rows[] = ['label' => 'Notes', 'value' => (string) $state['notes'], 'step' => 'code'];
+            $rows[] = ['label' => 'Notes', 'value' => (string) $state['notes'], 'step' => 'extras'];
         }
         if ($want !== 'sell' && !empty($state['resale'])) {
-            $rows[] = ['label' => 'Resale item', 'value' => 'Yes' . (($state['vendor_name'] ?? '') !== '' ? ' — ' . $state['vendor_name'] . (($state['vendor_code'] ?? '') !== '' ? ' (' . $state['vendor_code'] . ')' : '') : ''), 'step' => 'code'];
+            $rows[] = ['label' => 'Resale item', 'value' => 'Yes' . (($state['vendor_name'] ?? '') !== '' ? ' — ' . $state['vendor_name'] . (($state['vendor_code'] ?? '') !== '' ? ' (' . $state['vendor_code'] . ')' : '') : ''), 'step' => 'extras'];
         }
         return $rows;
     }
 
     public function commit(array $state): WizardResult
     {
-        $want = (string) ($state['want'] ?? '');
+        $want = $this->wantFor($state, $this->productFor($state));
         QuickAssignController::requireFor($this->app->auth, $want);
         $res = $this->quick()->run([
             'product_mode' => $state['product_mode'] ?? 'existing',
@@ -293,6 +446,7 @@ final class QuickAssignWizard extends Wizard
     public function expertUrl(array $state): ?string
     {
         $q = ['expert' => 1];
+        $state['want'] = $this->wantFor($state, $this->productFor($state));
         foreach (['product', 'product_mode', 'want', 'prefix_id', 'suffix_id', 'description', 'reason', 'reason_text', 'original_customer_id', 'resale', 'vendor_name', 'vendor_code', 'notes'] as $k) {
             if (($state[$k] ?? '') !== '') {
                 $q[$k] = $state[$k];
@@ -316,6 +470,7 @@ final class QuickAssignWizard extends Wizard
 
     public function commitExplanation(): string
     {
-        return 'Pressing the button reserves the next free number and writes it to the cross-reference. Numbers are never reused; if this is a mistake, void it afterwards.';
+        return 'Pressing the button reserves the next free number and writes it to the cross-reference. Numbers are never reused; if this is a mistake, '
+            . ($this->app->auth->can(Permissions::CODES_VOID) ? 'void it afterwards.' : 'an administrator can void it afterwards.');
     }
 }

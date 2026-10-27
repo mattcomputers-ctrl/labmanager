@@ -230,6 +230,72 @@ final class ProjectItemsTest extends TestCase
         exec('rm -rf ' . escapeshellarg($base));
     }
 
+    public function testAttachmentsAreCheckedByContentNotOnlyByName(): void
+    {
+        $p = $this->project([['description' => 'A']]);
+        $base = sys_get_temp_dir() . '/chroma-test-files-' . getmypid();
+        $att = new Attachments($this->db, $this->app->audit, $this->app->settings, $base);
+        $upload = function (string $name, string $content): array {
+            $tmp = tempnam(sys_get_temp_dir(), 'up');
+            file_put_contents($tmp, $content);
+            return ['name' => $name, 'tmp_name' => $tmp, 'size' => strlen($content), 'error' => UPLOAD_ERR_OK];
+        };
+        // A web page called .jpg is refused: the detected type wins over the name.
+        try {
+            $att->store((int) $p['id'], $upload('page.jpg', "<!DOCTYPE html><html><head><title>x</title></head><body><script>alert(1)</script></body></html>\n"), $this->adminId);
+            $this->fail('html named .jpg accepted');
+        } catch (ValidationException $e) {
+            $this->assertArrayHasKey('file', $e->errors);
+        }
+        // PHP source with a harmless extension is refused too.
+        try {
+            $att->store((int) $p['id'], $upload('x.php.txt', "<?php\necho 'hi';\n"), $this->adminId);
+            $this->fail('php source named .txt accepted');
+        } catch (ValidationException $e) {
+            $this->assertArrayHasKey('file', $e->errors);
+        }
+        $this->assertCount(0, $att->forProject((int) $p['id']));
+        // A real image and a plain text note still go through.
+        $png = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==');
+        $row = $att->store((int) $p['id'], $upload('drawdown.png', $png), $this->adminId);
+        $this->assertSame('image/png', $row['mime']);
+        $this->assertTrue($row['is_image']);
+        $txt = $att->store((int) $p['id'], $upload('notes.txt', "Drawdown looked fine.\n"), $this->adminId);
+        $this->assertStringStartsWith('text/plain', $txt['mime']);
+        $this->assertCount(2, $att->forProject((int) $p['id']));
+        $this->assertTrue(Attachments::dangerousMime('application/x-sh'));
+        $this->assertTrue(Attachments::dangerousMime('application/x-dosexec'));
+        $this->assertFalse(Attachments::dangerousMime('application/pdf'));
+        $this->assertFalse(Attachments::dangerousMime('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'));
+        exec('rm -rf ' . escapeshellarg($base));
+    }
+
+    public function testProjectCompletesWhenTheLastUnfinishedItemIsRemovedOrAddedDone(): void
+    {
+        $matched = (int) $this->db->value('SELECT id FROM chroma_item_statuses WHERE code = "matched" AND project_type_id IS NULL');
+        $p = $this->project([['description' => 'Pantone 300 C'], ['description' => 'Pantone 301 C']]);
+        $rows = $this->items->forProject((int) $p['id']);
+        $this->items->setStatus((int) $rows[0]['id'], $matched, $this->adminId);
+        $this->assertSame('open', $this->projects->get((int) $p['id'])['status']);
+        $this->items->remove((int) $rows[1]['id'], $this->adminId);
+        $after = $this->projects->get((int) $p['id']);
+        $this->assertSame('completed', $after['status'], 'only a matched color is left, so the project completes itself');
+        $this->assertSame('1 of 1 matched', $after['progress']['label']);
+
+        // Adding an item that is already "done" (an existing product that was matched elsewhere) counts too.
+        $p2 = $this->project([['description' => 'Pantone 302 C']]);
+        $r2 = $this->items->forProject((int) $p2['id']);
+        $this->items->setStatus((int) $r2[0]['id'], $matched, $this->adminId);
+        $this->assertSame('completed', $this->projects->get((int) $p2['id'])['status']);
+        $this->projects->reopen((int) $p2['id'], $this->adminId);
+        $this->items->add((int) $p2['id'], ['description' => 'Pantone 303 C', 'status_id' => $matched], $this->adminId);
+        $this->assertSame('completed', $this->projects->get((int) $p2['id'])['status']);
+        // … while adding a pending item keeps it open.
+        $this->projects->reopen((int) $p2['id'], $this->adminId);
+        $this->items->add((int) $p2['id'], ['description' => 'Pantone 304 C'], $this->adminId);
+        $this->assertSame('open', $this->projects->get((int) $p2['id'])['status']);
+    }
+
     public function testAnItemThatHoldsACodeCannotBeRepointedToAnotherCode(): void
     {
         $p = $this->project([['description' => 'Pantone 300 C'], ['description' => 'Pantone 301 C']]);

@@ -13,6 +13,7 @@ if (can('codes.view')) { $nav[] = ['Code logs', '/codes/logs', str_starts_with($
 if (can('codes.assign_internal', 'codes.assign_sell')) { $nav[] = ['Quick assign', '/assign', str_starts_with($path, '/assign') || str_starts_with($path, '/wizard/quick-assign')]; }
 if (can('reports.view')) { $nav[] = ['Reports', '/reports', str_starts_with($path, '/reports')]; }
 if (can('admin.lists', 'admin.prefixes', 'admin.sequences', 'admin.users', 'admin.network', 'admin.cms', 'admin.system', 'admin.import')) { $nav[] = ['Admin', '/admin', str_starts_with($path, '/admin')]; }
+$nav[] = ['Help', '/help', str_starts_with($path, '/help')];
 $initials = '';
 if ($user) {
     $name = (string) ($user['display_name'] ?: $user['username']);
@@ -42,13 +43,19 @@ $easySwitch = $easyUrl ?? null;
 <body class="mode-<?= e($modeNow) ?>" x-data="{ navOpen: false, userMenu: false }" @chroma:escape.document="navOpen = false; userMenu = false">
 <a class="skip-link" href="#main">Skip to content</a>
 <header class="topbar">
-  <button class="btn btn-ghost btn-icon hamburger" type="button" @click="navOpen = !navOpen" aria-label="Menu" :aria-expanded="navOpen">
+  <button class="btn btn-ghost btn-icon hamburger" type="button" @click="navOpen = !navOpen; userMenu = false" aria-label="Menu" :aria-expanded="navOpen">
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
   </button>
   <a class="brand" href="/"><span class="brand-mark" aria-hidden="true"></span>Chroma</a>
-  <nav class="nav" :class="{ open: navOpen }" aria-label="Main">
+  <nav class="nav" :class="{ open: navOpen }" @click.outside="if (!$event.target.closest('.hamburger')) navOpen = false" @click.self="navOpen = false" aria-label="Main">
+    <?php if (can('codes.view')): ?>
+    <form class="nav-search" action="/codes" method="get" role="search">
+      <label class="sr-only" for="nav-search">Search codes and projects</label>
+      <input id="nav-search" type="search" name="q" placeholder="Search codes, projects…" autocomplete="off">
+    </form>
+    <?php endif; ?>
     <?php foreach ($nav as [$label, $href, $active]): ?>
-      <a href="<?= e($href) ?>"<?= $active ? ' class="active" aria-current="page"' : '' ?>><?= e($label) ?></a>
+      <a href="<?= e($href) ?>"<?= $active ? ' class="active" aria-current="page"' : '' ?> @click="navOpen = false"><?= e($label) ?></a>
     <?php endforeach; ?>
   </nav>
   <div class="topbar-right">
@@ -63,7 +70,7 @@ $easySwitch = $easyUrl ?? null;
       <a href="<?= e($expertSwitch ?? url('/mode', ['set' => 'expert', 'return' => $returnTo])) ?>" class="<?= $modeNow === 'expert' ? 'on' : '' ?>" <?= $modeNow === 'expert' ? 'aria-current="true"' : '' ?>>Expert</a>
     </div>
     <div class="menu" @click.outside="userMenu = false">
-      <button type="button" class="btn btn-ghost btn-icon" @click="userMenu = !userMenu" aria-label="Account menu" :aria-expanded="userMenu">
+      <button type="button" class="btn btn-ghost btn-icon" @click="userMenu = !userMenu; navOpen = false" aria-label="Account menu" :aria-expanded="userMenu">
         <span class="avatar"><?= e($initials ?: '?') ?></span>
       </button>
       <div class="menu-panel" x-show="userMenu" x-cloak x-transition.opacity>
