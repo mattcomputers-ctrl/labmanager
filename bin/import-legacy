@@ -1,0 +1,93 @@
+#!/usr/bin/env php
+<?php
+/**
+ * Legacy spreadsheet import from the command line. Same code as
+ * Admin → Import legacy codes; prints the same report as text.
+ *
+ *   bin/import-legacy --dry-run  cross-reference.xls security-log.xlsx uv-log.xlsx
+ *   bin/import-legacy --commit   cross-reference.xls security-log.xlsx uv-log.xlsx
+ *
+ * Options:
+ *   --no-uvv-map     import UVV rows under a new retired prefix UVV instead of UVVL
+ *   --user=NAME      record the run as this user (default: the first administrator)
+ *   --no-record      dry run only: do not write a chroma_imports row
+ *
+ * Exit codes: 0 ok, 1 failed, 2 usage.
+ */
+declare(strict_types=1);
+require __DIR__ . '/../vendor/autoload.php';
+
+use Chroma\Core\App;
+use Chroma\Core\ValidationException;
+use Chroma\Domain\Import\LegacyImporter;
+
+$args = array_slice($argv, 1);
+$mode = null;
+$mapUvv = true;
+$user = null;
+$record = true;
+$files = [];
+foreach ($args as $a) {
+    if ($a === '--dry-run') {
+        $mode = 'dry';
+    } elseif ($a === '--commit') {
+        $mode = 'commit';
+    } elseif ($a === '--no-uvv-map') {
+        $mapUvv = false;
+    } elseif ($a === '--no-record') {
+        $record = false;
+    } elseif (str_starts_with($a, '--user=')) {
+        $user = substr($a, 7);
+    } elseif ($a === '--help' || $a === '-h') {
+        $mode = null;
+        $files = [];
+        break;
+    } elseif (str_starts_with($a, '--')) {
+        fwrite(STDERR, "Unknown option $a\n");
+        exit(2);
+    } else {
+        $files[] = ['path' => $a, 'name' => basename($a)];
+    }
+}
+if ($mode === null || $files === []) {
+    fwrite(STDERR, "Usage: bin/import-legacy --dry-run|--commit [--no-uvv-map] [--user=NAME] file.xls [file2.xlsx file3.xlsx]\n");
+    exit(2);
+}
+foreach ($files as $f) {
+    if (!is_file($f['path'])) {
+        fwrite(STDERR, "File not found: {$f['path']}\n");
+        exit(2);
+    }
+}
+
+$app = App::boot(dirname(__DIR__));
+$db = $app->db;
+$actor = $user !== null
+    ? $db->one('SELECT id, username FROM chroma_users WHERE username = ?', [$user])
+    : $db->one("SELECT u.id, u.username FROM chroma_users u JOIN chroma_user_groups ug ON ug.user_id = u.id JOIN chroma_groups g ON g.id = ug.group_id WHERE g.name = 'Administrators' AND u.active = 1 ORDER BY u.id LIMIT 1");
+if ($actor === null) {
+    fwrite(STDERR, $user !== null ? "No user called $user.\n" : "No administrator account yet. Run bin/create-admin first.\n");
+    exit(2);
+}
+$app->auth->actAs((int) $actor['id']);
+$importer = new LegacyImporter($db, $app->audit);
+$t = microtime(true);
+try {
+    if ($mode === 'dry') {
+        $plan = $importer->dryRun($files, ['map_uvv' => $mapUvv], (int) $actor['id'], $record);
+    } else {
+        $plan = $importer->commit($files, ['map_uvv' => $mapUvv], (int) $actor['id']);
+    }
+} catch (ValidationException $e) {
+    fwrite(STDERR, 'Import refused: ' . $e->getMessage() . "\n");
+    exit(1);
+} catch (Throwable $e) {
+    fwrite(STDERR, 'Import failed: ' . $e->getMessage() . "\n");
+    exit(1);
+}
+echo $plan->toText();
+printf("\nRun as %s%s in %.1f s.\n", $actor['username'], $plan->importId ? ' (recorded as import run #' . $plan->importId . ')' : '', microtime(true) - $t);
+if ($mode === 'dry') {
+    echo "Nothing was written. Re-run with --commit to apply.\n";
+}
+exit(0);

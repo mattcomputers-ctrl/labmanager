@@ -1,0 +1,53 @@
+/* Admin → Import legacy codes. Loaded only on the import screens. */
+.import-steps { list-style: none; margin: 0 0 var(--s-6); padding: 0; display: flex; align-items: center; gap: var(--s-3); flex-wrap: wrap; }
+.import-steps .step { display: inline-flex; align-items: center; gap: var(--s-2); color: var(--text-3); font-weight: 600; font-size: var(--fs-s); }
+.import-steps .step .n { width: 28px; height: 28px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; border: 2px solid var(--border-strong); font-size: var(--fs-xs); }
+.import-steps .step.current { color: var(--primary); }
+.import-steps .step.current .n { border-color: var(--primary); background: var(--primary); color: #fff; }
+.import-steps .step.done { color: var(--text-2); }
+.import-steps .step.done .n { border-color: var(--success); background: var(--success); color: #fff; }
+.import-steps .sep { flex: 0 0 24px; height: 2px; background: var(--border); }
+.mode-easy .import-steps .step { font-size: var(--fs); }
+
+.import-files { list-style: none; margin: 0 0 var(--s-4); padding: 0; display: grid; gap: var(--s-3); }
+.import-file { display: grid; grid-template-columns: auto 1fr; gap: var(--s-3); align-items: start; padding: var(--s-4); border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.import-file svg { width: 28px; height: 28px; color: var(--primary); margin-top: 2px; }
+.import-file .name { font-weight: 650; word-break: break-all; }
+.import-file .meta { color: var(--text-2); font-size: var(--fs-s); }
+.import-file .counts { display: flex; flex-wrap: wrap; gap: var(--s-2) var(--s-4); margin-top: var(--s-2); font-size: var(--fs-s); }
+.import-file .counts b { font-variant-numeric: tabular-nums; }
+
+.import-totals { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--s-3); margin-bottom: var(--s-5); }
+.import-totals .stat { padding: var(--s-4); }
+.import-totals .stat-value { font-size: var(--fs-2xl); }
+.import-totals .stat.warn .stat-value { color: var(--warning); }
+
+.import-list { margin: 0; padding: 0; list-style: none; max-height: 320px; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius-s); background: var(--surface); }
+.import-list li { padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: var(--fs-s); display: flex; gap: var(--s-3); align-items: baseline; flex-wrap: wrap; }
+.import-list li:last-child { border-bottom: 0; }
+.import-list .where { color: var(--text-3); font-size: var(--fs-xs); margin-left: auto; white-space: nowrap; }
+.import-list .code { font-family: var(--mono); font-weight: 600; }
+.import-section summary { cursor: pointer; font-weight: 650; padding: var(--s-3) 0; display: flex; align-items: center; gap: var(--s-2); min-height: var(--touch); }
+.import-section summary .badge { margin-left: 4px; }
+.import-section[open] summary { margin-bottom: var(--s-2); }
+.import-section .none { color: var(--text-3); font-size: var(--fs-s); padding: 0 0 var(--s-3); }
+
+.import-dropzone { position: relative; }
+.import-dropzone input[type="file"] { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+.import-dropzone .picked { margin-top: var(--s-3); text-align: left; }
+.import-dropzone .picked li { font-size: var(--fs-s); padding: 4px 0; display: flex; gap: var(--s-2); align-items: center; }
+
+.import-log { white-space: pre-wrap; font-family: var(--mono); font-size: var(--fs-xs); background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-s); padding: var(--s-4); max-height: 480px; overflow: auto; margin: 0; }
+.import-confirm { border: 1px solid var(--border-strong); border-radius: var(--radius); padding: var(--s-4); background: var(--surface-2); margin: var(--s-5) 0; }
+.import-confirm .check { margin-bottom: var(--s-2); }
+.import-actions { display: flex; gap: var(--s-3); align-items: center; flex-wrap: wrap; margin-top: var(--s-5); }
+.import-actions .spacer { flex: 1; }
+.issue-raw dt { color: var(--text-3); }
+.issue-actions { display: grid; gap: var(--s-4); }
+@media (min-width: 900px) { .issue-actions { grid-template-columns: 1fr 1fr; } .issue-actions .span-all { grid-column: 1 / -1; } }
+@media (max-width: 640px) {
+  .import-file { grid-template-columns: 1fr; }
+  .import-file svg { display: none; }
+  .import-actions .btn { width: 100%; justify-content: center; }
+  .import-actions .spacer { display: none; }
+}
