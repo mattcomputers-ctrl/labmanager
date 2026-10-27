@@ -99,7 +99,7 @@ final class LegacyImporterTest extends TestCase
 
     public function testUnrecognisedSheetIsRefusedInPlainLanguage(): void
     {
-        $path = sys_get_temp_dir() . '/chroma-not-legacy.xlsx';
+        $path = (getenv('CHROMA_TEST_TMP') ?: sys_get_temp_dir()) . '/chroma-not-legacy.xlsx';
         write_sheet($path, 'Other', [['Name', 'Qty', 'Price']], [['Widget', 2, 3.5]], 'xlsx');
         $this->expectException(ValidationException::class);
         $this->expectExceptionMessageMatches('/does not look like one of the three legacy sheets/');
@@ -495,7 +495,7 @@ final class LegacyImporterTest extends TestCase
     public function testASellNumberLinkedToAnotherENumberIsReportedNotSilentlyIgnored(): void
     {
         // Between two sheets in one run (nothing in Chroma yet): the X log gives X104043 a different E number than the cross-reference.
-        $path = sys_get_temp_dir() . '/chroma-xlog-conflict.xlsx';
+        $path = (getenv('CHROMA_TEST_TMP') ?: sys_get_temp_dir()) . '/chroma-xlog-conflict.xlsx';
         write_sheet($path, 'X Codes', [['Code', 'Description', 'Internal Code', 'Comments']], [
             ['X104043', 'Security ink block 104', 'E9001', 'different E# than the cross-reference'],
             ['X104041', 'Security green', 'E9002', ''],
@@ -632,7 +632,7 @@ final class LegacyImporterTest extends TestCase
      */
     public function testThousandsOfRowsImportWellUnderAMinute(): void
     {
-        $dir = sys_get_temp_dir() . '/chroma-legacy-large';
+        $dir = (getenv('CHROMA_TEST_TMP') ?: sys_get_temp_dir()) . '/chroma-legacy-large';
         $fx = make_legacy_fixtures($dir, 3000);
         $t = microtime(true);
         $plan = $this->importer->commit([['path' => $fx['large'], 'name' => 'large.xls'], ['path' => $fx['xlog'], 'name' => 'x.xlsx'], ['path' => $fx['uvlog'], 'name' => 'uv.xlsx']], [], $this->adminId);

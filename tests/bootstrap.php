@@ -24,8 +24,12 @@ if ($testDb === $cfg->get('DB_NAME', 'chroma')) {
     exit(1);
 }
 putenv('DB_NAME=' . $testDb);
-putenv('LOG_PATH=' . sys_get_temp_dir() . '/chroma-test-logs');
-putenv('FILES_PATH=' . sys_get_temp_dir() . '/chroma-test-files');
+// Per-user scratch dirs so a suite run as root never blocks a later run as the app user (the updater runs it as chroma).
+$scratch = sys_get_temp_dir() . '/chroma-test-' . (function_exists('posix_geteuid') ? posix_geteuid() : getmyuid());
+putenv('CHROMA_TEST_TMP=' . $scratch);
+putenv('LOG_PATH=' . $scratch . '/logs');
+putenv('FILES_PATH=' . $scratch . '/files');
+@mkdir($scratch, 0700, true);
 $_ENV['DB_NAME'] = $testDb;
 
 $app = App::boot($root);

@@ -38,7 +38,8 @@ final class Helper
             return [127, 'The system helper is not installed on this machine (expected ' . ($this->bin ?? self::BIN) . '). It is installed by install.sh.'];
         }
         foreach ($args as $a) {
-            if (!preg_match('/^[A-Za-z0-9_.:\/-]+$/', $a)) {
+            // Letters, digits and the characters that appear in interface names, addresses, CIDRs and comma-separated DNS lists.
+            if (!preg_match('/^[A-Za-z0-9_.:\/,-]+$/', $a) || strlen($a) > 200) {
                 throw new \InvalidArgumentException('Invalid helper argument');
             }
         }
