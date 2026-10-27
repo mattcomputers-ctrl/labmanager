@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# chroma-update - update Chroma to the newest version.
+#
+# Installed by install.sh to /usr/local/sbin/chroma-update. It is a thin wrapper
+# that re-runs the installer from /opt/chroma in update mode with the flags given:
+#
+#   sudo chroma-update                 fetch, back up, pull, migrate, test, reload
+#   sudo chroma-update --check         only say whether an update is available
+#   sudo chroma-update --force         run the update steps even when nothing is new
+#   sudo chroma-update --branch beta   switch to / update from another branch
+#   sudo chroma-update --unattended    never prompt (used by the admin screen)
+set -Eeuo pipefail
+
+APP_DIR="${CHROMA_APP_DIR:-/opt/chroma}"
+
+if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
+    sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'
+    exit 0
+fi
+if [ "$(id -u)" -ne 0 ]; then
+    if command -v sudo >/dev/null 2>&1; then
+        exec sudo -- "$0" "$@"
+    fi
+    printf 'chroma-update: run this as root (sudo chroma-update)\n' >&2
+    exit 1
+fi
+if [ ! -f "$APP_DIR/install.sh" ]; then
+    printf 'chroma-update: %s/install.sh is missing. Is Chroma installed? Re-run the install line from README.md.\n' "$APP_DIR" >&2
+    exit 1
+fi
+# install.sh is about to run as root: it must be root-owned and not writable by anyone else
+# (install.sh keeps the whole checkout that way; chroma-helper checks the same before calling us).
+if [ -n "$(find "$APP_DIR/install.sh" \( ! -user root -o -perm /022 \) -print 2>/dev/null)" ]; then
+    printf 'chroma-update: %s/install.sh is writable by someone other than root; refusing to run it as root.\n       Fix with: sudo chown -R root:root %s && sudo chmod -R go-w %s\n' "$APP_DIR" "$APP_DIR" "$APP_DIR" >&2
+    exit 1
+fi
+exec /usr/bin/env bash "$APP_DIR/install.sh" "$@"

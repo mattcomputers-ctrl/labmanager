@@ -1,0 +1,133 @@
+#!/usr/bin/env bash
+# bin/uninstall - remove Chroma from this server.
+#
+#   sudo chroma-uninstall            remove the app, services and helper; KEEP the database,
+#                                    the config file, the attachments and the backups
+#   sudo chroma-uninstall --purge    also drop the databases and the database user and delete
+#                                    config, attachments, backups, logs and the chroma user
+#   --yes                            do not ask for confirmation
+#
+# (chroma-uninstall is this script, installed to /usr/local/sbin by install.sh; it is kept after a
+# normal uninstall so that `sudo chroma-uninstall --purge` still works once /opt/chroma is gone.)
+#
+# The network settings in /etc/netplan/60-chroma.yaml are never removed (removing them would
+# change the server's IP address). Packages (nginx, MariaDB, PHP) are left installed.
+set -Eeuo pipefail
+
+APP_DIR="${CHROMA_APP_DIR:-/opt/chroma}"
+CONFIG_DIR="${CHROMA_CONFIG_DIR:-/etc/chroma}"
+CONFIG_FILE="$CONFIG_DIR/config.env"
+APP_USER="${CHROMA_APP_USER:-chroma}"
+APP_HOME="${CHROMA_APP_HOME:-/var/lib/chroma}"
+COMPOSER_DIR="${CHROMA_COMPOSER_HOME:-/var/cache/chroma/composer}"
+LOG_DIR="${CHROMA_LOG_DIR:-/var/log/chroma}"
+BACKUP_DIR="${CHROMA_BACKUP_DIR:-/var/backups/chroma}"
+SBIN_DIR="${CHROMA_SBIN_DIR:-/usr/local/sbin}"
+PHP_VER="8.3"
+PURGE=0
+YES=0
+
+usage() { sed -n '2,14p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+for a in "$@"; do
+    case "$a" in
+        --purge) PURGE=1 ;;
+        --yes|-y) YES=1 ;;
+        --help|-h) usage; exit 0 ;;
+        *) printf 'uninstall: unknown option %s\n\n' "$a" >&2; usage >&2; exit 2 ;;
+    esac
+done
+[ "$(id -u)" -eq 0 ] || { printf 'uninstall: run as root:  sudo %s\n' "$0" >&2; exit 1; }
+
+have_systemd() { [ -d /run/systemd/system ] && command -v systemctl >/dev/null 2>&1; }
+svc() { if have_systemd; then systemctl "$@" 2>/dev/null || true; else printf 'WARN systemd is not running; skipped: systemctl %s\n' "$*"; fi; }
+say() { printf '[uninstall] %s\n' "$*"; }
+
+cfg_get() {
+    local val
+    val=$(grep -E "^(export )?$1=" "$CONFIG_FILE" 2>/dev/null | tail -n1 | cut -d= -f2- || true)
+    val=${val#\"}; val=${val%\"}; val=${val#\'}; val=${val%\'}
+    printf '%s' "${val:-${2:-}}"
+}
+DB_NAME=$(cfg_get DB_NAME chroma)
+TEST_DB_NAME=$(cfg_get TEST_DB_NAME "${DB_NAME}_test")
+DB_USER=$(cfg_get DB_USER chroma)
+FILES_PATH=$(cfg_get FILES_PATH "$APP_HOME/files")
+
+echo
+if [ "$PURGE" -eq 1 ]; then
+    echo "This will REMOVE Chroma from this server AND DELETE ALL ITS DATA:"
+    echo "  - databases $DB_NAME and $TEST_DB_NAME, and the database user $DB_USER"
+    echo "  - the config file $CONFIG_FILE"
+    echo "  - attachments in $FILES_PATH, backups in $BACKUP_DIR, logs in $LOG_DIR"
+    echo "  - the application in $APP_DIR, services, helper scripts and the $APP_USER user"
+    echo "There is no undo. Copy $BACKUP_DIR somewhere safe first if you may need the data."
+else
+    echo "This will remove the Chroma application, services and helper scripts from this server."
+    echo "It KEEPS the database ($DB_NAME), $CONFIG_FILE, attachments in $FILES_PATH and backups in $BACKUP_DIR,"
+    echo "so a later re-install finds everything again. Use --purge to delete those too."
+fi
+echo
+if [ "$YES" -eq 0 ]; then
+    if (: </dev/tty) 2>/dev/null; then
+        printf 'Type "yes" to continue: ' >/dev/tty
+        IFS= read -r answer </dev/tty || answer=""
+    else
+        answer=""
+        echo "No terminal to confirm on; run again with --yes to skip the question." >&2
+    fi
+    [ "$answer" = "yes" ] || { echo "Nothing was changed."; exit 1; }
+fi
+
+say "Stopping and removing services and timers"
+svc disable --now chroma-backup.timer chroma-cms-sync.timer
+rm -f /etc/systemd/system/chroma-backup.service /etc/systemd/system/chroma-backup.timer \
+      /etc/systemd/system/chroma-cms-sync.service /etc/systemd/system/chroma-cms-sync.timer
+svc daemon-reload
+
+say "Removing the nginx site and the PHP-FPM pool"
+rm -f /etc/nginx/sites-enabled/chroma /etc/nginx/sites-available/chroma
+rm -f "/etc/php/${PHP_VER}/fpm/pool.d/chroma.conf"
+if command -v nginx >/dev/null 2>&1 && nginx -t >/dev/null 2>&1; then svc reload nginx; fi
+svc reload-or-restart "php${PHP_VER}-fpm"
+
+say "Removing the helper, the updater, the sudoers drop-in and log rotation"
+rm -f "$SBIN_DIR/chroma-helper" "$SBIN_DIR/chroma-update" /etc/sudoers.d/chroma /etc/logrotate.d/chroma
+
+say "Removing the application in $APP_DIR"
+rm -rf "$APP_DIR" "$CONFIG_DIR/installed" "$COMPOSER_DIR"
+rmdir "$(dirname "$COMPOSER_DIR")" 2>/dev/null || true   # /var/cache/chroma, when empty
+
+if [ "$PURGE" -eq 1 ]; then
+    say "Dropping databases $DB_NAME, $TEST_DB_NAME and user $DB_USER"
+    if command -v mysql >/dev/null 2>&1 && mysqladmin --silent ping >/dev/null 2>&1; then
+        MYSQL_PWD="${CHROMA_MYSQL_ROOT_PASSWORD:-}" mysql -uroot <<SQL || echo "WARN could not drop the databases; do it by hand: DROP DATABASE $DB_NAME; DROP USER '$DB_USER'@'localhost';"
+DROP DATABASE IF EXISTS \`$DB_NAME\`;
+DROP DATABASE IF EXISTS \`$TEST_DB_NAME\`;
+DROP USER IF EXISTS '$DB_USER'@'localhost';
+FLUSH PRIVILEGES;
+SQL
+    else
+        echo "WARN MariaDB is not running; databases were not dropped."
+    fi
+    say "Deleting config, attachments, backups and logs"
+    rm -rf "$CONFIG_DIR" "$BACKUP_DIR" "$LOG_DIR" "$FILES_PATH"
+    if id -u "$APP_USER" >/dev/null 2>&1; then
+        say "Removing the $APP_USER user"
+        # Leftover PHP-FPM pool workers (the pool file is gone, but without a reload the master respawns them) block userdel.
+        pkill -u "$APP_USER" 2>/dev/null || true
+        for _ in 1 2 3 4 5; do pgrep -u "$APP_USER" >/dev/null 2>&1 || break; sleep 1; pkill -KILL -u "$APP_USER" 2>/dev/null || true; done
+        userdel "$APP_USER" 2>/dev/null || userdel -f "$APP_USER" 2>/dev/null || deluser --quiet "$APP_USER" 2>/dev/null \
+            || echo "WARN could not remove the $APP_USER user (a PHP-FPM pool may still run as it). Stop php${PHP_VER}-fpm, then run: userdel $APP_USER"
+        rm -rf "$APP_HOME"
+    fi
+    rm -f "$SBIN_DIR/chroma-uninstall"
+    echo
+    echo "Chroma and all its data were removed."
+else
+    echo
+    echo "Chroma was removed. Kept for you:"
+    echo "  database $DB_NAME (and $TEST_DB_NAME), config $CONFIG_FILE, attachments $FILES_PATH, backups $BACKUP_DIR, logs $LOG_DIR."
+    echo "To reinstall and reconnect to this data, run the install line from README.md again."
+    echo "To delete the data as well:  sudo chroma-uninstall --purge   (that command stays installed for this purpose)."
+fi
+echo "The network settings in /etc/netplan/60-chroma.yaml (if any) were left in place."

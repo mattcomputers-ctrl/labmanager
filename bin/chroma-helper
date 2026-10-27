@@ -1,0 +1,311 @@
+#!/usr/bin/env bash
+# =============================================================================
+# chroma-helper - the ONLY privileged entry point for the Chroma web app.
+#
+# Installed by install.sh to /usr/local/sbin/chroma-helper (root:root 0755).
+# A sudoers drop-in lets the `chroma` user run exactly this script without a
+# password; src/Core/Helper.php calls it with `sudo -n`. Every command below
+# validates its arguments strictly; anything else exits 2. No shell passthrough.
+#
+#   chroma-helper check-update        exit 0; prints "up-to-date <short>" or "update-available <old> <new>"
+#   chroma-helper update [branch]     runs chroma-update --unattended [--branch X], streaming its log; exit = result
+#   chroma-helper backup              runs bin/backup; prints the absolute path of the new .sql.gz
+#   chroma-helper list-backups        "<path>\t<bytes>\t<YYYY-MM-DD HH:MM>" per line, newest first
+#                                     (database dumps AND attachment tarballs, so both can be downloaded)
+#   chroma-helper network-status      JSON {"interfaces":[{"name","ip","gateway","dns":[],"dhcp","up"}]}
+#   chroma-helper set-network <iface> <ip/cidr> <gateway> <dns1,dns2>
+#                                     writes /etc/netplan/60-chroma.yaml, validates, applies after 10 s
+#   chroma-helper set-network <iface> dhcp
+#                                     same, but switches the interface back to DHCP
+#   chroma-helper restart-services    reloads php8.3-fpm and nginx
+# =============================================================================
+set -Eeuo pipefail
+
+APP_DIR="${CHROMA_APP_DIR:-/opt/chroma}"
+APP_USER="${CHROMA_APP_USER:-chroma}"
+APP_HOME="${CHROMA_APP_HOME:-/var/lib/chroma}"
+CONFIG_FILE="${CHROMA_CONFIG_FILE:-/etc/chroma/config.env}"
+BACKUP_DIR="${CHROMA_BACKUP_DIR:-/var/backups/chroma}"
+NETPLAN_FILE="${CHROMA_NETPLAN_FILE:-/etc/netplan/60-chroma.yaml}"
+UPDATER="${CHROMA_UPDATER:-/usr/local/sbin/chroma-update}"
+PHP_VER="8.3"
+
+usage() {
+    cat <<'EOF'
+Usage: chroma-helper <command> [args]
+  check-update
+  update [branch]
+  backup
+  list-backups
+  network-status
+  set-network <iface> <ip/cidr> <gateway> <dns1[,dns2[,dns3]]>
+  set-network <iface> dhcp
+  restart-services
+EOF
+}
+fail() { printf 'chroma-helper: %s\n' "$1" >&2; exit "${2:-2}"; }   # fail "<message>" [exit-code]
+warn() { printf 'chroma-helper: WARN %s\n' "$*" >&2; }
+
+have_systemd() { [ -d /run/systemd/system ] && command -v systemctl >/dev/null 2>&1; }
+have_netplan() { command -v netplan >/dev/null 2>&1; }
+require_root() { [ "$(id -u)" -eq 0 ] || fail "must run as root (the web app calls it through sudo)" 1; }
+
+run_as_app() {
+    local -a envs=("HOME=$APP_HOME" "TMPDIR=$APP_HOME/tmp" "CHROMA_CONFIG=$CONFIG_FILE" "PATH=/usr/local/bin:/usr/bin:/bin")
+    local v
+    for v in http_proxy https_proxy HTTP_PROXY HTTPS_PROXY no_proxy NO_PROXY SSL_CERT_FILE; do
+        if [ -n "${!v:-}" ]; then envs+=("$v=${!v}"); fi
+    done
+    runuser -u "$APP_USER" -- env -i "${envs[@]}" "$@"
+}
+# git runs as root: $APP_DIR is root-owned and read-only for the app user (install.sh, ownership model).
+git_app() { env -i HOME=/root PATH=/usr/local/bin:/usr/bin:/bin git -C "$APP_DIR" "$@"; }
+
+# Refuse to hand root to anything the app user could have written. install.sh keeps $APP_DIR
+# root-owned; if that ever changes (a hand-made chown), updating through the web app stops working
+# instead of becoming a way for the web app to run its own code as root.
+assert_not_app_writable() {
+    local p bad
+    bad=$(find "$APP_DIR" -maxdepth 0 \( ! -user root -o -perm /022 \) -print 2>/dev/null)
+    [ -z "$bad" ] || fail "refusing to update: $APP_DIR is writable by someone other than root. On the server run: sudo chown -R root:root $APP_DIR && sudo chmod -R go-w $APP_DIR" 1
+    for p in "$UPDATER" "$APP_DIR/install.sh" "$APP_DIR/bin" "$APP_DIR/deploy" "$APP_DIR/.git/hooks" "$APP_DIR/.git/config"; do
+        [ -e "$p" ] || continue
+        bad=$(find "$p" ! -type l \( ! -user root -o -perm /022 \) -print 2>/dev/null | head -n 3)
+        [ -z "$bad" ] || fail "refusing to update: ${bad//$'\n'/ } is writable by someone other than root. On the server run: sudo chown -R root:root $APP_DIR && sudo chmod -R go-w $APP_DIR" 1
+    done
+}
+
+# ----------------------------------------------------------------------------- validation
+valid_ipv4() {
+    local ip=$1 o
+    [[ $ip =~ ^([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})$ ]] || return 1
+    for o in "${BASH_REMATCH[@]:1:4}"; do [ "$o" -le 255 ] || return 1; done
+}
+valid_cidr() {
+    [[ $1 =~ ^([0-9.]+)/([0-9]{1,2})$ ]] || return 1
+    local ip=${BASH_REMATCH[1]} prefix=${BASH_REMATCH[2]}   # saved: valid_ipv4 overwrites BASH_REMATCH
+    valid_ipv4 "$ip" && [ "$prefix" -ge 1 ] && [ "$prefix" -le 32 ]
+}
+valid_iface_name() { [[ $1 =~ ^[A-Za-z0-9][A-Za-z0-9_.-]{0,14}$ ]]; }
+valid_branch() { [[ $1 =~ ^[A-Za-z0-9][A-Za-z0-9._/-]{0,100}$ ]] && [[ $1 != *..* ]]; }
+ip_to_int() { local a b c d; IFS=. read -r a b c d <<<"$1"; echo $(( (a << 24) + (b << 16) + (c << 8) + d )); }
+same_subnet() { # same_subnet <ip> <prefix> <other-ip>
+    local mask=$(( 0xFFFFFFFF << (32 - $2) & 0xFFFFFFFF ))
+    [ $(( $(ip_to_int "$1") & mask )) -eq $(( $(ip_to_int "$3") & mask )) ]
+}
+
+validate_network_args() {
+    local iface=$1 cidr=$2 gw=$3 dns=$4
+    valid_iface_name "$iface" || fail "interface name '$iface' is not valid"
+    valid_cidr "$cidr" || fail "IP address must look like 10.10.5.20/24 (got '$cidr')"
+    valid_ipv4 "$gw" || fail "gateway must be an IPv4 address such as 10.10.5.1 (got '$gw')"
+    local ip=${cidr%%/*} prefix=${cidr##*/}
+    [ "$ip" != "$gw" ] || fail "the gateway cannot be the same as the server's own address"
+    same_subnet "$ip" "$prefix" "$gw" || fail "gateway $gw is not inside the network $cidr; check the address or the /$prefix size"
+    case "$ip" in 0.*|127.*|255.*) fail "$ip is not a usable server address" ;; esac
+    [ "$prefix" -le 30 ] || fail "a /$prefix network has no room for a gateway; use /24 or similar"
+    local n=0 d
+    IFS=',' read -r -a parts <<<"$dns"
+    for d in "${parts[@]}"; do
+        [ -n "$d" ] || fail "DNS list has an empty entry (got '$dns')"
+        valid_ipv4 "$d" || fail "DNS server '$d' is not an IPv4 address"
+        n=$((n + 1))
+    done
+    [ "$n" -ge 1 ] && [ "$n" -le 3 ] || fail "give one to three DNS servers separated by commas (got '$dns')"
+}
+
+# ----------------------------------------------------------------------------- commands
+cmd_check_update() {
+    require_root
+    local branch old new
+    branch=$(git_app rev-parse --abbrev-ref HEAD 2>/dev/null || echo main)
+    [ "$branch" != "HEAD" ] || branch=main
+    git_app fetch -q origin "$branch" 2>&1 || fail "could not reach the git remote (no network?)" 1
+    old=$(git_app rev-parse --short HEAD)
+    new=$(git_app rev-parse --short "origin/$branch")
+    if [ "$old" = "$new" ]; then
+        printf 'up-to-date %s\n' "$old"
+    else
+        printf 'update-available %s %s\n' "$old" "$new"
+    fi
+}
+
+cmd_update() {
+    require_root
+    [ -x "$UPDATER" ] || fail "$UPDATER is not installed" 1
+    assert_not_app_writable
+    if [ -n "${1:-}" ]; then
+        exec "$UPDATER" --unattended --branch "$1"
+    fi
+    exec "$UPDATER" --unattended
+}
+
+cmd_backup() {
+    require_root
+    [ -x "$APP_DIR/bin/backup" ] || fail "$APP_DIR/bin/backup is missing" 1
+    exec runuser -u "$APP_USER" -- env "HOME=$APP_HOME" "CHROMA_CONFIG=$CONFIG_FILE" "CHROMA_BACKUP_DIR=$BACKUP_DIR" "$APP_DIR/bin/backup" --print-path
+}
+
+cmd_list_backups() {
+    require_root
+    [ -d "$BACKUP_DIR" ] || exit 0
+    find "$BACKUP_DIR" -maxdepth 1 -type f \( -name 'chroma-db-*.sql.gz' -o -name 'chroma-files-*.tar.gz' \) -printf '%T@\t%p\t%s\t%TY-%Tm-%Td %TH:%TM\n' \
+        | sort -rn | cut -f2-
+}
+
+cmd_network_status() {
+    require_root
+    python3 - <<'PY'
+import json, subprocess, os, re
+
+def sh(args):
+    try:
+        return subprocess.check_output(args, stderr=subprocess.DEVNULL, text=True)
+    except Exception:
+        return ""
+
+addrs = json.loads(sh(["ip", "-j", "-4", "addr", "show"]) or "[]")
+routes = json.loads(sh(["ip", "-j", "-4", "route", "show"]) or "[]")
+gateways = {}
+for r in routes:
+    if r.get("dst") == "default" and r.get("dev"):
+        gateways.setdefault(r["dev"], r.get("gateway"))
+
+# DNS per link from systemd-resolved, with /etc/resolv.conf as the fallback.
+dns_by_link, dns_global = {}, []
+for line in sh(["resolvectl", "dns"]).splitlines():
+    m = re.match(r"\s*Link \d+ \(([^)]+)\):\s*(.*)$", line)
+    if m:
+        dns_by_link[m.group(1)] = [d for d in m.group(2).split() if d]
+    elif line.startswith("Global:"):
+        dns_global = line.split(":", 1)[1].split()
+if not dns_by_link and not dns_global:
+    try:
+        with open("/etc/resolv.conf") as f:
+            dns_global = [l.split()[1] for l in f if l.startswith("nameserver") and not l.split()[1].startswith("127.")]
+    except OSError:
+        pass
+
+skip = re.compile(r"^(lo|veth|docker|br-|virbr|ifb|tun|tap|wg)")
+out = []
+for a in addrs:
+    name = a.get("ifname", "")
+    if skip.match(name) or a.get("link_type") not in ("ether", None):
+        continue
+    v4 = [x for x in a.get("addr_info", []) if x.get("family") == "inet"]
+    ip = f"{v4[0]['local']}/{v4[0]['prefixlen']}" if v4 else ""
+    dhcp = bool(v4 and v4[0].get("dynamic"))
+    out.append({
+        "name": name,
+        "ip": ip,
+        "gateway": gateways.get(name) or "",
+        "dns": dns_by_link.get(name) or dns_global,
+        "dhcp": dhcp,
+        "up": "UP" in a.get("flags", []),
+    })
+print(json.dumps({"interfaces": out}))
+PY
+}
+
+cmd_set_network() {
+    local iface=$1 cidr=${2:-} gw=${3:-} dns=${4:-}
+    dns=${dns// /}
+    local dhcp=0 ip="" dns_yaml=""
+    if [ "$cidr" = "dhcp" ]; then
+        dhcp=1
+        valid_iface_name "$iface" || fail "interface name '$iface' is not valid"
+        [ -z "$gw" ] && [ -z "$dns" ] || fail "set-network <iface> dhcp takes no gateway or DNS"
+    else
+        validate_network_args "$iface" "$cidr" "$gw" "$dns"
+        ip=${cidr%%/*}
+        dns_yaml=$(printf '%s' "$dns" | sed 's/,/, /g')
+    fi
+    require_root
+    [ -d "/sys/class/net/$iface" ] || fail "there is no network interface called $iface on this server"
+    local tmp; tmp=$(mktemp)
+    if [ "$dhcp" -eq 1 ]; then
+        cat >"$tmp" <<EOF
+# Written by chroma-helper (Chroma Admin -> Network). Re-run the admin screen to change it.
+network:
+  version: 2
+  renderer: networkd
+  ethernets:
+    $iface:
+      dhcp4: true
+EOF
+    else
+        cat >"$tmp" <<EOF
+# Written by chroma-helper (Chroma Admin -> Network). Re-run the admin screen to change it.
+network:
+  version: 2
+  renderer: networkd
+  ethernets:
+    $iface:
+      dhcp4: false
+      dhcp6: false
+      addresses: [$cidr]
+      routes:
+        - to: default
+          via: $gw
+      nameservers:
+        addresses: [$dns_yaml]
+EOF
+    fi
+    if ! have_netplan; then
+        rm -f "$tmp"
+        warn "netplan is not installed on this machine; the network was NOT changed."
+        if [ "$dhcp" -eq 1 ]; then printf 'not-applied dhcp\n'; else printf 'not-applied http://%s/\n' "$ip"; fi
+        return 0
+    fi
+    install -d -m 0755 "$(dirname "$NETPLAN_FILE")"
+    [ -f "$NETPLAN_FILE" ] && cp -p "$NETPLAN_FILE" "$NETPLAN_FILE.previous"
+    install -o root -g root -m 0600 "$tmp" "$NETPLAN_FILE"
+    rm -f "$tmp"
+    if ! netplan generate 2>&1; then
+        if [ -f "$NETPLAN_FILE.previous" ]; then mv -f "$NETPLAN_FILE.previous" "$NETPLAN_FILE"; else rm -f "$NETPLAN_FILE"; fi
+        netplan generate >/dev/null 2>&1 || true
+        fail "netplan rejected the new settings; the previous configuration was restored and nothing changed" 1
+    fi
+    # Keep APP_URL in step so links and the summary show the new address.
+    if [ "$dhcp" -eq 0 ] && [ -f "$CONFIG_FILE" ] && grep -q '^APP_URL=' "$CONFIG_FILE"; then
+        sed -i "s#^APP_URL=.*#APP_URL=http://$ip#" "$CONFIG_FILE"
+    fi
+    nohup setsid bash -c 'sleep 10; netplan apply' >/dev/null 2>&1 </dev/null &
+    if [ "$dhcp" -eq 1 ]; then
+        printf 'applying-in-10s dhcp (the address will be whatever the DHCP server hands out; check the console or the router)\n'
+    else
+        printf 'applying-in-10s http://%s/\n' "$ip"
+    fi
+}
+
+cmd_restart_services() {
+    require_root
+    if ! have_systemd; then
+        warn "systemd is not running on this machine; nothing was reloaded."
+        return 0
+    fi
+    nginx -t >/dev/null 2>&1 || fail "nginx configuration test failed; not reloading" 1
+    systemctl reload-or-restart "php${PHP_VER}-fpm"
+    systemctl reload-or-restart nginx
+    echo "reloaded php${PHP_VER}-fpm and nginx"
+}
+
+# ----------------------------------------------------------------------------- dispatch
+cmd=${1:-}
+[ $# -gt 0 ] && shift
+case "$cmd" in
+    check-update)     [ $# -eq 0 ] || fail "check-update takes no arguments"; cmd_check_update ;;
+    update)           [ $# -le 1 ] || fail "update takes at most one argument (branch)"
+                      if [ $# -eq 1 ]; then valid_branch "$1" || fail "'$1' is not a valid branch name"; fi
+                      cmd_update "${1:-}" ;;
+    backup)           [ $# -eq 0 ] || fail "backup takes no arguments"; cmd_backup ;;
+    list-backups)     [ $# -eq 0 ] || fail "list-backups takes no arguments"; cmd_list_backups ;;
+    network-status)   [ $# -eq 0 ] || fail "network-status takes no arguments"; cmd_network_status ;;
+    set-network)      if [ $# -eq 2 ] && [ "$2" = "dhcp" ]; then cmd_set_network "$1" dhcp
+                      elif [ $# -eq 4 ]; then cmd_set_network "$1" "$2" "$3" "$4"
+                      else fail "set-network needs <iface> <ip/cidr> <gateway> <dns1,dns2>  or  <iface> dhcp"; fi ;;
+    restart-services) [ $# -eq 0 ] || fail "restart-services takes no arguments"; cmd_restart_services ;;
+    --help|-h|help)   usage; exit 0 ;;
+    "")               usage >&2; exit 2 ;;
+    *)                printf 'chroma-helper: unknown command "%s"\n' "$cmd" >&2; usage >&2; exit 2 ;;
+esac

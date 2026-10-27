@@ -1,0 +1,5 @@
+# Chroma: the web application user may run the privileged helper - and nothing else -
+# without a password. The helper accepts a fixed set of commands and validates every argument.
+# Installed by install.sh to /etc/sudoers.d/chroma after `visudo -c`.
+Defaults:chroma !requiretty
+chroma ALL=(root) NOPASSWD: /usr/local/sbin/chroma-helper

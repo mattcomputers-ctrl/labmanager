@@ -1,0 +1,111 @@
+#!/usr/bin/env bash
+# bin/backup - dump the Chroma database and tar the attachments, then prune old backups.
+#
+#   bin/backup                      write chroma-db-<stamp>.sql.gz (+ chroma-files-<stamp>.tar.gz)
+#   bin/backup --print-path         print only the path of the database dump (used by chroma-helper)
+#   bin/backup --quiet              no output unless something fails
+#   bin/backup --keep-days N        keep N days of backups (default 30, or CHROMA_BACKUP_KEEP_DAYS)
+#   bin/backup --dir DIR            backup directory (default /var/backups/chroma, or CHROMA_BACKUP_DIR)
+#
+# Reads the database settings from $CHROMA_CONFIG (default /etc/chroma/config.env).
+# Run nightly by the chroma-backup.timer systemd unit as the chroma user.
+# Restore: see README.md "Restoring a backup".
+set -Eeuo pipefail
+
+ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+CONFIG="${CHROMA_CONFIG:-/etc/chroma/config.env}"
+case "$CONFIG" in /*) ;; *) CONFIG="$ROOT/${CONFIG#./}" ;; esac
+BACKUP_DIR="${CHROMA_BACKUP_DIR:-/var/backups/chroma}"
+KEEP_DAYS="${CHROMA_BACKUP_KEEP_DAYS:-30}"
+PRINT_PATH=0
+QUIET=0
+
+usage() { sed -n '2,12p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --print-path) PRINT_PATH=1 ;;
+        --quiet|-q) QUIET=1 ;;
+        --keep-days) KEEP_DAYS=${2:-}; shift ;;
+        --keep-days=*) KEEP_DAYS=${1#*=} ;;
+        --dir) BACKUP_DIR=${2:-}; shift ;;
+        --dir=*) BACKUP_DIR=${1#*=} ;;
+        --help|-h) usage; exit 0 ;;
+        *) printf 'backup: unknown option %s\n\n' "$1" >&2; usage >&2; exit 2 ;;
+    esac
+    shift
+done
+[[ $KEEP_DAYS =~ ^[0-9]+$ ]] || { printf 'backup: --keep-days must be a whole number of days\n' >&2; exit 2; }
+
+LOG_FILE=""
+logline() { [ -n "$LOG_FILE" ] && printf '[%s] %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$*" >>"$LOG_FILE" || true; }
+say() { [ "$QUIET" -eq 1 ] || [ "$PRINT_PATH" -eq 1 ] || printf '%s\n' "$*"; }
+fail() { printf 'backup: ERROR %s\n' "$*" >&2; logline "ERROR $*"; exit 1; }
+
+cfg_get() {
+    local val
+    val=$(grep -E "^(export )?$1=" "$CONFIG" 2>/dev/null | tail -n1 | cut -d= -f2- || true)
+    val=${val#\"}; val=${val%\"}; val=${val#\'}; val=${val%\'}
+    printf '%s' "${val:-${2:-}}"
+}
+
+[ -r "$CONFIG" ] || fail "cannot read the config file $CONFIG (set CHROMA_CONFIG or run as the chroma user)"
+DB_HOST=$(cfg_get DB_HOST 127.0.0.1)
+DB_PORT=$(cfg_get DB_PORT 3306)
+DB_NAME=$(cfg_get DB_NAME chroma)
+DB_USER=$(cfg_get DB_USER chroma)
+DB_PASS=$(cfg_get DB_PASS "")
+FILES_PATH=$(cfg_get FILES_PATH "")
+LOG_PATH=$(cfg_get LOG_PATH "")
+[ -n "$LOG_PATH" ] && [ -d "$LOG_PATH" ] && [ -w "$LOG_PATH" ] && LOG_FILE="$LOG_PATH/backup.log"
+
+command -v mysqldump >/dev/null 2>&1 || fail "mysqldump is not installed (apt install mariadb-client)"
+mkdir -p "$BACKUP_DIR" 2>/dev/null || fail "cannot create the backup directory $BACKUP_DIR"
+[ -w "$BACKUP_DIR" ] || fail "cannot write to the backup directory $BACKUP_DIR"
+
+STAMP=$(date '+%Y-%m-%d_%H%M%S')
+DB_FILE="$BACKUP_DIR/chroma-db-$STAMP.sql.gz"
+FILES_FILE="$BACKUP_DIR/chroma-files-$STAMP.tar.gz"
+
+# Credentials go through a private defaults file, never on the command line.
+DEFAULTS=$(mktemp)
+trap 'rm -f "$DEFAULTS" "$DB_FILE.part" "$FILES_FILE.part"' EXIT
+chmod 600 "$DEFAULTS"
+printf '[client]\nhost=%s\nport=%s\nuser=%s\npassword=%s\n' "$DB_HOST" "$DB_PORT" "$DB_USER" "$DB_PASS" >"$DEFAULTS"
+
+if ! mysqldump --defaults-extra-file="$DEFAULTS" --single-transaction --quick --triggers --skip-lock-tables "$DB_NAME" 2>"$DEFAULTS.err" | gzip -6 >"$DB_FILE.part"; then
+    err=$(cat "$DEFAULTS.err" 2>/dev/null || true); rm -f "$DEFAULTS.err"
+    fail "mysqldump of $DB_NAME failed: ${err:-unknown error}"
+fi
+rm -f "$DEFAULTS.err"
+mv "$DB_FILE.part" "$DB_FILE"
+chmod 600 "$DB_FILE"
+DB_SIZE=$(du -h "$DB_FILE" | cut -f1)
+say "Database backup:    $DB_FILE ($DB_SIZE)"
+logline "db $DB_FILE $DB_SIZE"
+
+if [ -n "$FILES_PATH" ] && [ -d "$FILES_PATH" ] && [ -n "$(ls -A "$FILES_PATH" 2>/dev/null)" ]; then
+    if tar -C "$(dirname "$FILES_PATH")" -czf "$FILES_FILE.part" "$(basename "$FILES_PATH")" 2>/dev/null; then
+        mv "$FILES_FILE.part" "$FILES_FILE"
+        chmod 600 "$FILES_FILE"
+        say "Attachments backup: $FILES_FILE ($(du -h "$FILES_FILE" | cut -f1))"
+        logline "files $FILES_FILE"
+    else
+        rm -f "$FILES_FILE.part"
+        printf 'backup: WARN the attachments in %s could not be archived (permissions?); the database dump is fine\n' "$FILES_PATH" >&2
+        logline "WARN attachments tar failed for $FILES_PATH"
+    fi
+else
+    say "Attachments:        none to back up yet ($FILES_PATH is empty or missing)"
+fi
+
+REMOVED=0
+if [ "$KEEP_DAYS" -gt 0 ]; then
+    while IFS= read -r old; do
+        rm -f -- "$old" && REMOVED=$((REMOVED + 1))
+    done < <(find "$BACKUP_DIR" -maxdepth 1 -type f \( -name 'chroma-db-*.sql.gz' -o -name 'chroma-files-*.tar.gz' \) -mtime +"$KEEP_DAYS" 2>/dev/null)
+fi
+say "Kept $KEEP_DAYS days of backups in $BACKUP_DIR; removed $REMOVED old file(s)."
+logline "pruned $REMOVED (keep $KEEP_DAYS days)"
+
+[ "$PRINT_PATH" -eq 1 ] && printf '%s\n' "$DB_FILE"
+exit 0
