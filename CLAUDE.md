@@ -14,19 +14,25 @@ Chroma is Precision Ink's color-lab project and code-management system. The full
 
 ```
 public/            document root: index.php front controller, assets (css, js, fonts, img)
-src/Core/          framework: App, Router, Request/Response, Db, Session, Auth, Csrf, Flash, View, Validator, Settings, Migrator, Permissions, helpers.php
-src/Domain/        business rules only — NO HTTP, NO HTML. Codes/, Projects/, Import/, Users/, Audit/, Cms/ …
-src/Http/          Controller base, Controllers/, Wizard/ (Easy-mode wizard framework)
-routes/*.php       every file is loaded; one file per module (00-core, 10-codes, 20-projects, 30-admin …)
-resources/views/   PHP templates, one folder per area; layouts/app.php and layouts/plain.php
-resources/components/  reusable UI pieces rendered with component('name', [...]) — see /styleguide
+src/Core/          framework: App, Router, Request/Response, Db, Session, Auth, Csrf, Flash, View, Validator, Settings, Migrator, Permissions, Helper (privileged helper wrapper), helpers.php
+src/Domain/        business rules only — NO HTTP, NO HTML:
+                   Codes/ (CodeAssigner = the only writer of codes, CodeFormat, CodeSearch, CodeDetails, QuickAssign, ManualEntry, PrefixAdmin)
+                   Projects/ (Projects, Items, Activity, Tasks, Attachments, Visibility), ProjectTypes/, Customers/, Import/ (legacy spreadsheets),
+                   Users/, Lists/, Reports/, Api/ (tokens, read-only queries), Cms/ (Mar-Kov customer sync), System/ (backups, updates, network, settings), Audit/, Export/
+src/Http/          Controller base, Controllers/ (Admin/, Api/, Codes/, Projects/ …), Wizard/ (Easy-mode wizard framework + one class per wizard)
+routes/*.php       every file is loaded, one per area: 00-core, 10-codes (JSON), 11-codes-ui, 20-projects, 30-admin, 31-admin-codes, 32-admin-import,
+                   33-admin-users, 34-admin-lists, 35-admin-system, 40-reports, 60-api (token-authenticated read-only API)
+resources/views/   PHP templates, one folder per area; layouts/app.php and layouts/plain.php; wizard/ holds the generic wizard screens
+resources/components/  reusable UI pieces rendered with component('name', [...]) — see /styleguide (form/field, form/lookup, button, badge, chip,
+                   code-pill, code-display, callout, empty-state, pagination, page-header, help-tip, kv, modal, confirm-form, confirm-reason-form, void-button, report-bar)
 resources/help/*.md    help pages written for the lab, served at /help/{slug}
-db/migrations/     numbered .sql files, idempotent (IF NOT EXISTS), applied by bin/migrate
+db/migrations/     numbered .sql files, idempotent (IF NOT EXISTS), applied by bin/migrate; new files get the next free number
 db/seeds/Seeder.php    reference data (groups, prefixes, suffixes, project types …), idempotent, run after migrations
-bin/               CLI tools: migrate, seed, create-admin, import-legacy, stress-assign, backup, uninstall …
-tests/             PHPUnit (needs the chroma_test database)
-deploy/            nginx site, php-fpm pool, systemd units, sudoers, helper scripts used by install.sh
-install.sh         installer AND updater (re-run = update)
+bin/               migrate, seed, create-admin, import-legacy, stress-assign, backup, cms-sync, uninstall, chroma-helper and chroma-update (installed to /usr/local/sbin)
+tests/             PHPUnit (needs the chroma_test database); tests/fixtures/ holds generated legacy spreadsheets
+deploy/            nginx site, php-fpm pool, systemd units (backup, cms-sync), logrotate, sudoers — copied into place by install.sh
+docs/              DECISIONS.md and QUESTIONS.md (assembled from docs/decisions/*.md and docs/questions/*.md), API.md, INSTALL-TESTING.md
+install.sh         installer AND updater (re-run = update); README.md is the operator guide
 ```
 
 ## Running locally
@@ -55,4 +61,8 @@ CHROMA_CONFIG=./config.env php -S 127.0.0.1:8080 -t public
 - **Components, not ad-hoc markup.** Buttons, fields, badges, code pills, callouts, confirm dialogs, pagination and the wizard shell are in `resources/components/`; `/styleguide` shows them all. One primary action per screen, 44px targets, verbs on buttons, red + confirmation + plain-words consequence for destructive actions.
 - **Search** uses normalized columns (`sell_number_normalized`, E number int) with prefix matches, plus FULLTEXT on descriptions. No `LIKE '%…%'` over big tables.
 - **Exports**: every list offers CSV and XLSX via `src/Domain/Export/Exporter`.
-- Keep `docs/DECISIONS.md` current when you choose something the spec left open.
+- **Either-of permissions** on a route use `->anyPermission(...)`; a single required key uses `->permission(...)`.
+- **Destructive actions with a reason** use `confirm-reason-form` or `void-button` (the reason input must live inside the form, not in a teleported modal).
+- **Historical spellings**: the parser is literal; search layers use `CodeFormat::canonicalPrefix()` and `legacy_text`. The importer maps UVV→UVVL itself (switchable).
+- **Nothing runs as root from the web app** except through `sudo -n /usr/local/sbin/chroma-helper <fixed command>`; `/opt/chroma` is root-owned and read-only for the app user.
+- Keep `docs/decisions/<area>.md` current when you choose something the spec left open, then regenerate `docs/DECISIONS.md` (the merge script concatenates the per-area files; keep headings as `# Area name`).
