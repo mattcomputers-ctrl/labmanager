@@ -1,0 +1,99 @@
+/* Reports module: cards on the home page, filter bar, bar visuals, pivot. */
+
+.report-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s-5); margin-bottom: var(--s-6); }
+@media (max-width: 1000px) { .report-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 640px) { .report-cards { grid-template-columns: 1fr; } }
+.report-card { display: flex; flex-direction: column; color: inherit; text-decoration: none; transition: box-shadow .15s, border-color .15s; }
+.report-card:hover, .report-card:focus-visible { text-decoration: none; border-color: var(--primary); box-shadow: var(--shadow-2); }
+.report-card-body { padding: var(--s-5) var(--s-6); flex: 1; }
+.report-card-body h2 { font-size: var(--fs-xl); margin: 0 0 var(--s-3); }
+.report-card-body p { color: var(--text-2); margin: 0; }
+.report-card-stat { display: flex; flex-direction: column; margin-bottom: var(--s-3); }
+.report-card-value { font-size: var(--fs-3xl); font-weight: 700; letter-spacing: -0.02em; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.report-card-label { color: var(--text-3); font-size: var(--fs-s); }
+.report-card-foot { padding: var(--s-3) var(--s-6); border-top: 1px solid var(--border); color: var(--primary); font-weight: 600; font-size: var(--fs-s); }
+.mode-easy .report-card-body { padding: var(--s-6); }
+
+/* Filter bar */
+.report-filters { margin-bottom: var(--s-6); }
+.report-filter-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: var(--s-4); }
+.report-filter-grid .field { margin: 0; }
+.report-chip-rows { display: flex; flex-wrap: wrap; gap: var(--s-4) var(--s-8); margin-top: var(--s-4); }
+.report-chip-rows .filter-chip { cursor: pointer; }
+.report-chip-rows .filter-chip:focus-within { box-shadow: var(--focus); }
+.report-filter-actions { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: var(--s-3); }
+.report-exports { display: flex; flex-wrap: wrap; gap: var(--s-2) var(--s-4); align-items: center; }
+.report-export-group { display: inline-flex; align-items: center; gap: var(--s-2); }
+
+/* Headline stats row */
+.report-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: var(--s-4); margin-bottom: var(--s-6); }
+
+/* Bars inside tables: thin, one hue, the real number lives in the next cell. */
+.rbar { position: relative; height: 12px; min-width: 120px; background: var(--surface-3); border-radius: 999px; overflow: hidden; }
+.rbar-fill { display: block; height: 100%; border-radius: 999px; background: var(--primary); }
+.rbar-success .rbar-fill { background: var(--success); }
+.rbar-warning .rbar-fill { background: var(--warning); }
+.rbar-danger .rbar-fill { background: var(--danger); }
+.rbar-muted .rbar-fill { background: var(--c-gray-400); }
+.rbar-label { position: absolute; inset: 0; font-size: 10px; line-height: 12px; padding-left: 6px; color: var(--text); }
+.table td.bar-cell { width: 28%; min-width: 140px; }
+.mode-easy .table td.bar-cell { width: 34%; }
+
+/* Stacked done/total bar */
+.rbar-stack { display: flex; height: 12px; min-width: 120px; background: var(--surface-3); border-radius: 999px; overflow: hidden; gap: 2px; }
+.rbar-stack > span { display: block; height: 100%; }
+.rbar-stack .done { background: var(--success); }
+.rbar-stack .open { background: var(--c-gray-400); }
+
+/* Aging buckets strip */
+.age-buckets { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--s-3); margin-bottom: var(--s-6); }
+@media (max-width: 760px) { .age-buckets { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 420px) { .age-buckets { grid-template-columns: 1fr; } }
+.age-bucket { display: block; color: inherit; text-decoration: none; padding: var(--s-4); border-radius: var(--radius); border: 1px solid var(--border); background: var(--surface); }
+.age-bucket:hover, .age-bucket:focus-visible { border-color: var(--primary); text-decoration: none; }
+.age-bucket.on { border-color: var(--primary); background: var(--primary-soft); }
+.age-bucket .n { font-size: var(--fs-2xl); font-weight: 700; font-variant-numeric: tabular-nums; }
+.age-bucket .l { display: block; color: var(--text-2); font-size: var(--fs-s); }
+.age-bucket .rbar { margin-top: var(--s-2); min-width: 0; }
+
+/* Monthly column chart drawn with CSS: one hue, labels in text color. */
+.col-chart { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: var(--s-2); align-items: end; height: 150px; padding: var(--s-2) 0 0; border-bottom: 1px solid var(--border-strong); }
+.col-chart .col { display: flex; flex-direction: column; justify-content: flex-end; align-items: center; height: 100%; min-width: 0; }
+.col-chart .col .v { font-size: var(--fs-xs); color: var(--text-2); font-variant-numeric: tabular-nums; margin-bottom: 2px; }
+.col-chart .col .b { width: 100%; max-width: 36px; background: var(--primary); border-radius: 4px 4px 0 0; min-height: 2px; }
+.col-labels { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: var(--s-2); margin-top: var(--s-2); margin-bottom: var(--s-6); }
+.col-labels span { text-align: center; font-size: var(--fs-xs); color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 640px) { .col-chart { height: 110px; } .col-chart .col .v { display: none; } .col-labels span:nth-child(even) { visibility: hidden; } }
+
+/* Pivot table: first column sticky so prefixes stay visible when scrolling months. */
+.pivot th:first-child, .pivot td:first-child { position: sticky; left: 0; background: var(--surface); z-index: 1; white-space: nowrap; }
+.pivot thead th:first-child { z-index: 3; background: var(--surface-2); }
+.pivot td.heat { text-align: right; font-variant-numeric: tabular-nums; }
+.pivot td.heat.h1 { background: var(--c-primary-50); }
+.pivot td.heat.h2 { background: var(--c-primary-100); }
+.pivot td.heat.h3 { background: var(--c-primary-200); }
+.pivot td.heat.h4 { background: var(--c-primary-300); color: #000; }
+.pivot tr.total-row td { font-weight: 600; border-top: 2px solid var(--border-strong); }
+.pivot td.zero { color: var(--text-3); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .pivot td.heat.h1 { background: #1e2a4a; }
+  :root:not([data-theme="light"]) .pivot td.heat.h2 { background: #24356a; }
+  :root:not([data-theme="light"]) .pivot td.heat.h3 { background: #2c438a; color: #fff; }
+  :root:not([data-theme="light"]) .pivot td.heat.h4 { background: #3763f2; color: #fff; }
+}
+:root[data-theme="dark"] .pivot td.heat.h1 { background: #1e2a4a; }
+:root[data-theme="dark"] .pivot td.heat.h2 { background: #24356a; }
+:root[data-theme="dark"] .pivot td.heat.h3 { background: #2c438a; color: #fff; }
+:root[data-theme="dark"] .pivot td.heat.h4 { background: #3763f2; color: #fff; }
+
+.report-section { margin-bottom: var(--s-8); }
+/* Side-by-side sections: a grid child defaults to min-width:auto, which lets a wide table
+   push the whole page sideways on a phone. Let the child shrink and keep the scroll in .table-wrap. */
+.grid > .report-section { min-width: 0; }
+/* The hidden radio inside a chip: the base ".filters input { min-width: 140px }" rule out-specifies
+   .sr-only and made it 140px wide, so the last chip's radio reached past the phone viewport and widened
+   the page. Pin it to the chip at 1px, as .sr-only intends. */
+.report-chip-rows .filter-chip { position: relative; }
+.report-chip-rows .filter-chip .sr-only { position: absolute; left: 0; top: 0; width: 1px; min-width: 0; height: 1px; }
+.report-section h2 { font-size: var(--fs-xl); margin: 0 0 var(--s-3); }
+.report-section .section-note { color: var(--text-2); margin: 0 0 var(--s-4); }
