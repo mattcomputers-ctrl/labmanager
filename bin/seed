@@ -1,0 +1,9 @@
+#!/usr/bin/env php
+<?php
+declare(strict_types=1);
+require __DIR__ . '/../vendor/autoload.php';
+use Chroma\Core\App;
+use Chroma\Db\Seeder;
+$app = App::boot(dirname(__DIR__));
+(new Seeder($app->db))->run();
+echo "Reference data seeded.\n";

@@ -1,0 +1,43 @@
+{
+    "name": "precision-ink/chroma",
+    "description": "Chroma - Precision Ink color lab project and code management",
+    "type": "project",
+    "license": "proprietary",
+    "require": {
+        "php": ">=8.3",
+        "ext-pdo": "*",
+        "ext-mbstring": "*",
+        "ext-json": "*",
+        "phpoffice/phpspreadsheet": "^2.3",
+        "chillerlan/php-qrcode": "^5.0",
+        "erusev/parsedown": "^1.7"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^11.5"
+    },
+    "autoload": {
+        "psr-4": {
+            "Chroma\\": "src/",
+            "Chroma\\Db\\": "db/seeds/"
+        },
+        "files": [
+            "src/Core/helpers.php"
+        ]
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Chroma\\Tests\\": "tests/"
+        }
+    },
+    "config": {
+        "optimize-autoloader": true,
+        "sort-packages": true,
+        "platform": {
+            "php": "8.3.0"
+        }
+    },
+    "scripts": {
+        "test": "phpunit",
+        "migrate": "php bin/migrate"
+    }
+}

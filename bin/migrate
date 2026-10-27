@@ -1,0 +1,31 @@
+#!/usr/bin/env php
+<?php
+/**
+ * Apply pending migrations, then seed reference data (idempotent).
+ *   bin/migrate            apply and seed
+ *   bin/migrate --status   list pending migrations only
+ */
+declare(strict_types=1);
+require __DIR__ . '/../vendor/autoload.php';
+
+use Chroma\Core\App;
+use Chroma\Core\Migrator;
+use Chroma\Db\Seeder;
+
+$app = App::boot(dirname(__DIR__));
+$migrator = new Migrator($app->db, $app->root . '/db/migrations');
+$args = array_slice($argv, 1);
+if (in_array('--status', $args, true)) {
+    $pending = $migrator->pending();
+    echo $pending ? "Pending migrations:\n  " . implode("\n  ", $pending) . "\n" : "Database is up to date.\n";
+    exit(0);
+}
+try {
+    $applied = $migrator->run(true);
+    echo $applied ? 'Applied ' . count($applied) . " migration(s).\n" : "No new migrations.\n";
+    (new Seeder($app->db))->run();
+    echo "Reference data checked.\n";
+} catch (Throwable $e) {
+    fwrite(STDERR, 'Migration failed: ' . $e->getMessage() . "\n");
+    exit(1);
+}

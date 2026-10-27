@@ -1,0 +1,11 @@
+# Questions for Matt
+
+Answers change settings or data, not code, unless noted. Defaults chosen so far are in *italics*.
+
+1. **`UVV` → `UVVL` mapping.** The importer maps rows spelled `UVV` to the `UVVL` prefix and keeps the original text in `legacy_text`. The dry-run report lists them for confirmation. *Default: map.*
+2. **Last-used numbers and starting values.** Seeded: first new E# = `E9102`, first project number = `101`, and the per-prefix numbers in SPEC.md §2.2. The import replaces prefix counters with max-in-use + 1. *Check Admin → Sequences and Admin → Prefixes after the import.*
+3. **`UV` prefix vs `UV` suffix.** Kept as a prefix named `UV` (labelled "UV legacy series", sorted last) because renaming it would change existing product codes. If you prefer a distinct name such as `UVL`, rename it in Admin → Prefixes (existing codes keep their stored prefix row and display with the new name — tell me if they should not). *Default: keep `UV`.*
+4. **Is the sell number always the iQC standard name?** *Default: yes* — the color row shows the sell number prominently with an "iQC standard" hint. Setting `sell_number_is_iqc_standard` in Admin → System turns the hint off.
+5. **X-code (security) items**: any different description or approval workflow? *Default: none* — X codes work like any other prefix, with `min_digits` = 6.
+6. **CMS customers**: which table and columns hold customers in the Mar-Kov `CMS` database? Nothing is guessed: Admin → CMS connection has fields for table, ID column, name column, optional active column and optional filter, and the "Test" button shows the first rows so you can confirm before syncing.
+7. **R&D numbering**: shared project sequence (101, 102 …) with the type shown as a badge, or an `RD-0001` series? *Default: shared.* Which groups may see R&D and confidential projects? *Default: the `R&D` group, the project lead, team members and Administrators.*

@@ -1,0 +1,71 @@
+#!/usr/bin/env php
+<?php
+/**
+ * Create (or reset) an administrator account.
+ *   bin/create-admin <username> [--password=...] [--name="Display Name"] [--no-force-change]
+ * Password is read from CHROMA_ADMIN_PASSWORD, --password, or prompted.
+ */
+declare(strict_types=1);
+require __DIR__ . '/../vendor/autoload.php';
+
+use Chroma\Core\App;
+use Chroma\Core\Auth;
+
+$app = App::boot(dirname(__DIR__));
+$args = array_slice($argv, 1);
+$username = null;
+$password = getenv('CHROMA_ADMIN_PASSWORD') ?: null;
+$name = null;
+$forceChange = true;
+foreach ($args as $a) {
+    if (str_starts_with($a, '--password=')) {
+        $password = substr($a, 11);
+    } elseif (str_starts_with($a, '--name=')) {
+        $name = substr($a, 7);
+    } elseif ($a === '--no-force-change') {
+        $forceChange = false;
+    } elseif ($username === null) {
+        $username = $a;
+    }
+}
+if ($username === null || $username === '') {
+    fwrite(STDERR, "Usage: bin/create-admin <username> [--password=...] [--name=...]\n");
+    exit(2);
+}
+if ($password === null) {
+    if (function_exists('posix_isatty') && posix_isatty(STDIN)) {
+        echo "Password for $username: ";
+        system('stty -echo');
+        $password = trim((string) fgets(STDIN));
+        system('stty echo');
+        echo "\n";
+    } else {
+        $password = trim((string) fgets(STDIN));
+    }
+}
+if ($problem = Auth::passwordProblem($password)) {
+    fwrite(STDERR, "$problem\n");
+    exit(2);
+}
+$db = $app->db;
+$now = $db->now();
+$groupId = (int) $db->value("SELECT id FROM chroma_groups WHERE name = 'Administrators'");
+if ($groupId === 0) {
+    fwrite(STDERR, "Run bin/migrate first (Administrators group missing).\n");
+    exit(1);
+}
+$existing = $db->one('SELECT id FROM chroma_users WHERE username = ?', [$username]);
+if ($existing) {
+    $id = (int) $existing['id'];
+    $db->update('chroma_users', ['password_hash' => Auth::hash($password), 'active' => 1, 'must_change_password' => $forceChange ? 1 : 0, 'updated_at' => $now] + ($name !== null ? ['display_name' => $name] : []), ['id' => $id]);
+    echo "Updated existing user $username.\n";
+} else {
+    $id = $db->insert('chroma_users', [
+        'username' => $username, 'display_name' => $name ?? ucfirst($username), 'password_hash' => Auth::hash($password),
+        'active' => 1, 'must_change_password' => $forceChange ? 1 : 0, 'ui_mode' => 'easy', 'created_at' => $now, 'updated_at' => $now,
+    ]);
+    echo "Created user $username.\n";
+}
+$db->run('INSERT IGNORE INTO chroma_user_groups (user_id, group_id) VALUES (?, ?)', [$id, $groupId]);
+$app->audit->record('user.create_admin', 'chroma_users', $id, null, ['username' => $username], 'bin/create-admin', $id);
+echo "$username is in the Administrators group.\n";

@@ -1,0 +1,4 @@
+<?php
+/** Props: code (display text), href (optional), void (bool), copy (bool) */
+$cls = 'code-pill' . (!empty($void) ? ' void' : '');
+if (!empty($href)): ?><a class="<?= $cls ?>" href="<?= e($href) ?>" title="<?= !empty($void) ? 'Voided' : 'Open' ?>"><?= e($code) ?></a><?php else: ?><span class="<?= $cls ?>"><?= e($code) ?></span><?php endif; ?><?php if (!empty($copy)): ?> <button type="button" class="btn btn-ghost btn-sm btn-icon" data-copy="<?= e($code) ?>" aria-label="Copy <?= e($code) ?>" title="Copy"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button><?php endif; ?>

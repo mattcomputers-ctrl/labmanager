@@ -1,0 +1,12 @@
+/vendor/
+/legacy/
+/config.env
+/config.env.*
+!/config.env.example
+/storage/
+/.phpunit.cache/
+/.phpunit.result.cache
+/node_modules/
+*.log
+.DS_Store
+/public/uploads/
