@@ -190,6 +190,9 @@ final class App
                     throw new ForbiddenException();
                 }
             }
+            if ($route->anyPermissions !== [] && !$this->auth->canAny(...$route->anyPermissions)) {
+                throw new ForbiddenException();
+            }
 
             $result = $this->invoke($route->handler, $request);
             return $this->toResponse($result);

@@ -162,10 +162,10 @@ final class WizardController extends Controller
         return $this->redirect('/wizard/' . $w->key() . '/done');
     }
 
-    public function done(Request $request): Response
+    public function finished(Request $request): Response
     {
         $w = $this->wizard($request);
-        $raw = $this->app->session->get('_wizard_result.' . $w->key());
+        $raw = $this->app->session->pull('_wizard_result.' . $w->key());
         $result = is_string($raw) ? unserialize($raw, ['allowed_classes' => [\Chroma\Http\Wizard\WizardResult::class]]) : null;
         if (!$result instanceof \Chroma\Http\Wizard\WizardResult) {
             return $this->redirect($w->cancelUrl([]));

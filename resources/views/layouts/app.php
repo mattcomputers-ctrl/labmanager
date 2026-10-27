@@ -35,9 +35,9 @@ $easySwitch = $easyUrl ?? null;
 <link rel="icon" href="/assets/img/favicon.svg" type="image/svg+xml">
 <script>try{var t=localStorage.getItem('chroma-theme');if(t&&t!=='system'){document.documentElement.setAttribute('data-theme',t);}}catch(e){}</script>
 <script defer src="/assets/js/chroma.js?v=<?= e($app->version()['short'] ?: '1') ?>"></script>
+<?= $view->section('head') ?>
 <script defer src="/assets/js/alpine-focus.min.js"></script>
 <script defer src="/assets/js/alpine.min.js"></script>
-<?= $view->section('head') ?>
 </head>
 <body class="mode-<?= e($modeNow) ?>" x-data="{ navOpen: false, userMenu: false }" @chroma:escape.document="navOpen = false; userMenu = false">
 <a class="skip-link" href="#main">Skip to content</a>

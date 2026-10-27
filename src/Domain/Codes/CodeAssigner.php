@@ -140,6 +140,12 @@ final class CodeAssigner
         if ($parsed === null) {
             throw ValidationException::single('code', 'Enter the E number as E followed by digits, with an optional version after a dash, like E6374-10.');
         }
+        if ($parsed['number'] > CodeFormat::MAX_NUMBER) {
+            throw ValidationException::single('code', 'That E number is too long. E numbers have at most ' . strlen((string) CodeFormat::MAX_NUMBER) . ' digits.');
+        }
+        if (strlen($parsed['version']) > 20) {
+            throw ValidationException::single('code', 'The version after the dash can be at most 20 characters.');
+        }
         $description = trim((string) ($data['description'] ?? ''));
         if ($description === '') {
             throw ValidationException::single('description', 'Give the E number a short description so people can find it later.');
@@ -170,6 +176,9 @@ final class CodeAssigner
         $parsed = CodeFormat::parseSell($code);
         if ($parsed === null) {
             throw ValidationException::single('code', 'Enter the sell number as prefix, number and optional suffix with no spaces, like Y1714UV or X104043.');
+        }
+        if ($parsed['number'] > CodeFormat::MAX_NUMBER) {
+            throw ValidationException::single('code', 'That number is too long. Sell numbers have at most ' . strlen((string) CodeFormat::MAX_NUMBER) . ' digits.');
         }
         $description = trim((string) ($data['description'] ?? ''));
         if ($description === '') {
@@ -411,7 +420,7 @@ final class CodeAssigner
             'vendor_code' => self::nullable($data['vendor_code'] ?? null, 100),
             'legacy_handschy_number' => self::nullable($data['legacy_handschy_number'] ?? null, 100),
             'legacy_internal_code' => self::nullable($data['legacy_internal_code'] ?? null, 100),
-            'date_assigned' => $data['date_assigned'] ?? gmdate('Y-m-d'),
+            'date_assigned' => array_key_exists('date_assigned', $data) ? $data['date_assigned'] : gmdate('Y-m-d'),
             'assigned_by' => $actorId,
             'original_customer_id' => isset($data['original_customer_id']) && (int) $data['original_customer_id'] > 0 ? (int) $data['original_customer_id'] : null,
             'voided' => 0,
@@ -441,7 +450,7 @@ final class CodeAssigner
             'internal_code_id' => isset($data['internal_code_id']) && (int) $data['internal_code_id'] > 0 ? (int) $data['internal_code_id'] : null,
             'legacy_internal_code' => self::nullable($data['legacy_internal_code'] ?? null, 100),
             'original_customer_id' => isset($data['original_customer_id']) && (int) $data['original_customer_id'] > 0 ? (int) $data['original_customer_id'] : null,
-            'date_assigned' => $data['date_assigned'] ?? gmdate('Y-m-d'),
+            'date_assigned' => array_key_exists('date_assigned', $data) ? $data['date_assigned'] : gmdate('Y-m-d'),
             'assigned_by' => $actorId,
             'reason' => self::nullable($data['reason'] ?? null, 40),
             'reason_text' => self::nullable($data['reason_text'] ?? null, 500),
@@ -455,9 +464,15 @@ final class CodeAssigner
 
     private function alreadyUsedMessage(Db $db, string $normalized, int $sellId): string
     {
-        $row = $db->one('SELECT s.description, i.number, i.version FROM chroma_sell_numbers s LEFT JOIN chroma_internal_codes i ON i.id = s.internal_code_id WHERE s.id = ?', [$sellId]);
-        $by = $row && $row['number'] ? ' by ' . CodeFormat::internal((int) $row['number'], $row['version']) : ($row && $row['description'] ? ' for "' . $row['description'] . '"' : '');
-        return sprintf('%s is already used%s. Pick a different suffix, or search for it.', $normalized, $by);
+        $row = $db->one(
+            'SELECT s.description, s.number, p.code AS prefix_code, p.min_digits, x.code AS suffix_code, i.number AS inum, i.version
+             FROM chroma_sell_numbers s JOIN chroma_code_prefixes p ON p.id = s.prefix_id LEFT JOIN chroma_code_suffixes x ON x.id = s.suffix_id
+             LEFT JOIN chroma_internal_codes i ON i.id = s.internal_code_id WHERE s.id = ?',
+            [$sellId]
+        );
+        $display = $row ? CodeFormat::sell($row['prefix_code'], (int) $row['number'], (int) $row['min_digits'], $row['suffix_code']) : $normalized;
+        $by = $row && $row['inum'] ? ' by ' . CodeFormat::internal((int) $row['inum'], $row['version']) : ($row && $row['description'] ? ' for "' . $row['description'] . '"' : '');
+        return sprintf('%s is already used%s. Pick a different suffix, or search for it.', $display, $by);
     }
 
     private function linkItem(Db $db, mixed $itemId, string $column, int $codeId, string $display, ?int $actorId): void

@@ -7,6 +7,8 @@ final class Route
 {
     /** @var list<string> */
     public array $permissions = [];
+    /** @var list<string> at least one of these is required (checked after $permissions) */
+    public array $anyPermissions = [];
     public bool $public = false;
     public bool $csrf = true;
     public ?string $name = null;
@@ -25,6 +27,13 @@ final class Route
     public function permission(string ...$keys): self
     {
         $this->permissions = array_merge($this->permissions, $keys);
+        return $this;
+    }
+
+    /** Require at least one of the given permissions. */
+    public function anyPermission(string ...$keys): self
+    {
+        $this->anyPermissions = array_merge($this->anyPermissions, $keys);
         return $this;
     }
 

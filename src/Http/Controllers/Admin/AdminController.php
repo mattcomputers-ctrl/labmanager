@@ -23,7 +23,9 @@ final class AdminController extends Controller
             ['Import legacy codes', '/admin/import', Permissions::ADMIN_IMPORT, 'Bring in the three spreadsheets; resolve import issues.'],
             ['CMS connection', '/admin/cms', Permissions::ADMIN_CMS, 'Read-only Mar-Kov connection and customer sync.'],
             ['Network', '/admin/network', Permissions::ADMIN_NETWORK, 'Server IP address, gateway and DNS.'],
-            ['System', '/admin/system', Permissions::ADMIN_SYSTEM, 'Version, updates, backups, API tokens, audit log.'],
+            ['System', '/admin/system', Permissions::ADMIN_SYSTEM, 'Version, updates, backups, API tokens.'],
+            ['Settings', '/admin/settings', Permissions::ADMIN_SYSTEM, 'Company name, time zone, SDS link, limits.'],
+            ['Audit log', '/admin/audit', Permissions::ADMIN_SYSTEM, 'Who changed what, with before and after values.'],
         ];
     }
 

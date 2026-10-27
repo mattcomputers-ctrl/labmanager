@@ -25,6 +25,7 @@ final class Settings
         'cms_customer_name_column' => '',
         'cms_customer_active_column' => '',
         'cms_customer_filter' => '',
+        'cms_deactivate_missing' => '0',
         'project_number_label' => 'Project',
         'rnd_customer_name' => 'Precision Ink R&D',
         'network_mirror' => '',

@@ -5,6 +5,7 @@ $cfg = ['name' => $name, 'url' => $url, 'initialValue' => (string) ($value ?? ''
 ?>
 <div class="lookup" x-data="lookup(<?= json_attr($cfg) ?>)" @click.outside="open = false">
   <input type="hidden" name="<?= e($name) ?>" :value="value">
+  <input type="hidden" name="<?= e($name) ?>_label" :value="value ? q : ''">
   <?php if (!empty($allow_new)): ?><input type="hidden" name="<?= e($name) ?>_text" :value="value ? '' : q"><?php endif; ?>
   <div class="input-row">
     <input type="text" id="<?= e($id) ?>" x-model="q" @input="onInput()" @focus="if (q && !value) search()" @keydown.down.prevent="move(1)" @keydown.up.prevent="move(-1)" @keydown.enter="enter($event)" @keydown.escape="open=false"

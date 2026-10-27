@@ -40,9 +40,10 @@ final class LookupApiController extends Controller
         $limit = 10;
         $i = CodeFormat::parseInternal($q);
         if ($i !== null) {
+            [$cond, $params] = self::numberPrefixCondition('number', $i['number']);
             $rows = $this->db->all(
-                'SELECT id, number, version, description, voided FROM chroma_internal_codes WHERE number >= ? AND number < ? ORDER BY number, version LIMIT ' . $limit,
-                [$i['number'], $this->upperBound($i['number'])]
+                'SELECT id, number, version, description, voided FROM chroma_internal_codes WHERE ' . $cond . ' ORDER BY number, version LIMIT ' . $limit,
+                $params
             );
             foreach ($rows as $r) {
                 $results[] = ['id' => 'E' . $r['id'], 'type' => 'internal', 'internal_code_id' => (int) $r['id'], 'label' => CodeFormat::internal((int) $r['number'], $r['version']) . ($r['voided'] ? ' (voided)' : ''), 'sub' => $r['description']];
@@ -86,11 +87,22 @@ final class LookupApiController extends Controller
         return $this->json(['results' => array_slice($results, 0, 15)]);
     }
 
-    private function upperBound(int $n): int
+    /**
+     * "E63" should match E63, E630–E639, E6300–E6399 … up to 7 digits, but
+     * not E7000. Returns a SQL condition over $column and its parameters.
+     * @return array{0:string,1:list<int>}
+     */
+    public static function numberPrefixCondition(string $column, int $n): array
     {
-        // "E63" should match E63, E630-E639, E6300-E6399 … up to 6 digits.
-        $len = strlen((string) $n);
-        return $len >= 6 ? $n + 1 : (int) ($n . str_repeat('9', 6 - $len)) + 1;
+        $digits = (string) $n;
+        $parts = ["$column = ?"];
+        $params = [$n];
+        for ($extra = 1; strlen($digits) + $extra <= 7; $extra++) {
+            $parts[] = "($column BETWEEN ? AND ?)";
+            $params[] = (int) ($digits . str_repeat('0', $extra));
+            $params[] = (int) ($digits . str_repeat('9', $extra));
+        }
+        return ['(' . implode(' OR ', $parts) . ')', $params];
     }
 
     /** Turn free text into a safe boolean-mode fulltext query: every word required, prefix-matched. */

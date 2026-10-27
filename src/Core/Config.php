@@ -43,7 +43,9 @@ final class Config
                 }
                 $key = trim(substr($line, 0, $eq));
                 $val = trim(substr($line, $eq + 1));
-                if ($val !== '' && ($val[0] === '"' || $val[0] === "'") && str_ends_with($val, $val[0])) {
+                if (strlen($val) >= 2 && $val[0] === '"' && str_ends_with($val, '"')) {
+                    $val = str_replace(['\\"', '\\\\'], ['"', '\\'], substr($val, 1, -1));
+                } elseif (strlen($val) >= 2 && $val[0] === "'" && str_ends_with($val, "'")) {
                     $val = substr($val, 1, -1);
                 }
                 $cfg->values[$key] = $val;

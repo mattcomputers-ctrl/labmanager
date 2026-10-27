@@ -9,6 +9,7 @@ $uid = 'cf' . substr(md5($action . $label), 0, 8);
 ?>
 <form method="post" action="<?= e($action) ?>" x-data="confirmForm()" @submit.prevent="ask()" class="<?= e($class ?? '') ?>" style="display:inline">
   <?= csrf_field() ?>
+  <?php if (!empty($reason)): ?><input type="hidden" name="reason" :value="reason"><?php endif; ?>
   <?php foreach (($fields ?? []) as $fk => $fv): ?><input type="hidden" name="<?= e($fk) ?>" value="<?= e($fv) ?>"><?php endforeach; ?>
   <button type="submit" class="btn btn-<?= e($variant === 'danger' ? 'danger-outline' : $variant) ?><?= !empty($size) ? ' btn-' . e($size) : '' ?>"><?= e($label) ?></button>
   <template x-teleport="body">
@@ -20,7 +21,6 @@ $uid = 'cf' . substr(md5($action . $label), 0, 8);
           <?php if (!empty($reason)): ?>
           <div class="field"><label class="label" for="<?= $uid ?>-r">Reason <span class="req">*</span></label>
             <input type="text" id="<?= $uid ?>-r" x-model="reason" data-confirm-focus required maxlength="500" placeholder="<?= e($reason_placeholder ?? 'Why? This is kept in the log.') ?>" @keydown.enter.prevent="if (reason.trim()) proceed()">
-            <input type="hidden" name="reason" :value="reason">
           </div>
           <?php endif; ?>
         </div>

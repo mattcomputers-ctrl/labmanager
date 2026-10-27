@@ -12,6 +12,9 @@ namespace Chroma\Domain\Codes;
  */
 final class CodeFormat
 {
+    /** Largest number a code may carry (9 digits; the columns are INT UNSIGNED). */
+    public const MAX_NUMBER = 999999999;
+
     /** Canonical key: uppercase, no spaces/hyphens, number without leading zeros. */
     public static function normalizeSell(string $text): ?string
     {
@@ -29,10 +32,11 @@ final class CodeFormat
         if ($t === '' || !preg_match('/^([A-Z]+)(\d+)([A-Z]+)?$/', $t, $m)) {
             return null;
         }
-        $number = (int) ltrim($m[2], '0');
-        if ($number <= 0 && ltrim($m[2], '0') === '') {
+        $digits = ltrim($m[2], '0');
+        if ($digits === '') {
             return null; // all zeros
         }
+        $number = (int) $digits; // saturates at PHP_INT_MAX for absurd input; callers check MAX_NUMBER
         $suffix = $m[3] ?? '';
         return [
             'prefix' => $m[1],

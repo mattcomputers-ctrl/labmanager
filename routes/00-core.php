@@ -29,5 +29,5 @@ $router->get('/wizard/{key}/step/{n:\d+}', [WizardController::class, 'step']);
 $router->post('/wizard/{key}/step/{n:\d+}', [WizardController::class, 'submitStep']);
 $router->get('/wizard/{key}/review', [WizardController::class, 'review']);
 $router->post('/wizard/{key}/commit', [WizardController::class, 'commit']);
-$router->get('/wizard/{key}/done', [WizardController::class, 'done']);
+$router->get('/wizard/{key}/done', [WizardController::class, 'finished']);
 $router->post('/wizard/{key}/cancel', [WizardController::class, 'cancel']);
