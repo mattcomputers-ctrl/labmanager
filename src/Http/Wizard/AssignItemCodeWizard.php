@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace Chroma\Http\Wizard;
 
+use Chroma\Http\Tips;
 use Chroma\Core\ForbiddenException;
 use Chroma\Core\NotFoundException;
 use Chroma\Core\Permissions;
@@ -10,6 +11,7 @@ use Chroma\Core\Request;
 use Chroma\Core\ValidationException;
 use Chroma\Domain\Codes\CodeAssigner;
 use Chroma\Domain\Codes\CodeFormat;
+use Chroma\Domain\Codes\QuickAssign;
 use Chroma\Domain\Projects\Projects;
 use Chroma\Domain\Projects\Visibility;
 
@@ -41,6 +43,8 @@ final class AssignItemCodeWizard extends Wizard
     {
         $which = $request->str('which');
         $state = ['item_id' => $request->int('item_id'), 'which' => in_array($which, ['internal', 'sell'], true) ? $which : null];
+        // Chosen with the "Assign E#" / "Assign sell number" button on the project page: no need to ask again.
+        $state['which_preset'] = $state['which'] !== null;
         // Refused at the start when the project is completed or cancelled (same message as the domain gives on commit).
         $item = !empty($state['item_id']) ? $this->projects()->items()->find((int) $state['item_id']) : null;
         $project = $item ? $this->projects()->find((int) $item['project_id']) : null;
@@ -82,12 +86,28 @@ final class AssignItemCodeWizard extends Wizard
             if ($this->canSell() && !$this->canInternal()) {
                 return 'sell';
             }
+            // Both allowed: when the item already carries one kind of code, only the other can be assigned.
+            if (!empty($state['item_id'])) {
+                $item = $this->item($state);
+                if ($item['internal_code_id'] !== null && $item['sell_number_id'] === null) {
+                    return 'sell';
+                }
+                if ($item['sell_number_id'] !== null && $item['internal_code_id'] === null) {
+                    return 'internal';
+                }
+            }
             return null;
         }
         if (($w === 'internal' && !$this->canInternal()) || ($w === 'sell' && !$this->canSell())) {
             throw new ForbiddenException();
         }
         return $w;
+    }
+
+    /** Someone who may assign both kinds is first asked which; the answer decides whether a prefix is asked. */
+    public function stepCountKnown(array $state): bool
+    {
+        return $this->which($state) !== null;
     }
 
     public function steps(array $state): array
@@ -98,7 +118,12 @@ final class AssignItemCodeWizard extends Wizard
         $item = $this->item($state);
         $which = $this->which($state);
         $steps = [];
-        if (($state['which'] ?? null) === null && $this->canInternal() && $this->canSell()) {
+        // Ask which kind of code only when there is a real choice: both permissions, both slots still free, and the kind
+        // was not already chosen on the project page. The step stays in the list after it is answered; dropping it would
+        // renumber the later steps (skipping the prefix screen) and leave Back and the review's "Change" with nothing to go to.
+        $askWhich = empty($state['which_preset']) && $this->canInternal() && $this->canSell()
+            && $item['internal_code_id'] === null && $item['sell_number_id'] === null;
+        if ($askWhich) {
             $steps[] = new Step('which', 'Which code does "' . $item['description'] . '" need?', 'Project ' . $item['project_number'] . '. A color can get its E number and its sell number at different times.', [[
                 'name' => 'which', 'type' => 'radio', 'label' => 'Code', 'required' => true, 'required_message' => 'Pick which code to assign.',
                 'options' => array_values(array_filter([
@@ -108,17 +133,14 @@ final class AssignItemCodeWizard extends Wizard
             ]]);
         }
         if ($which === 'sell') {
-            $prefixes = $this->app->db->all('SELECT id, code, label, description FROM chroma_code_prefixes WHERE retired = 0 ORDER BY sort_order, code');
-            $steps[] = new Step('prefix', 'Which prefix?', 'The prefix says what kind of product this is. The number after it is given out automatically.', [[
-                'name' => 'prefix_id', 'type' => 'select', 'label' => 'Prefix', 'required' => true, 'placeholder' => 'Choose a prefix', 'required_message' => 'Choose a prefix; it says what kind of product this is.',
-                'options' => array_map(fn($p) => [(int) $p['id'], $p['code'] . ' — ' . $p['label'] . ($p['description'] ? ' · ' . $p['description'] : '')], $prefixes),
-                'default' => $item['project']['default_prefix_id'],
-            ]]);
+            $steps[] = new Step('prefix', 'Which prefix?', 'The prefix says what kind of product this is. The number after it is given out automatically; the next free one is shown on each card.', [[
+                'name' => 'prefix_id', 'required' => true, 'required_message' => 'Choose a prefix; it says what kind of product this is.',
+            ]], template: 'codes/wizard-prefix');
             $allowed = !empty($state['prefix_id']) ? $this->app->db->all('SELECT s.id, s.code, s.label FROM chroma_code_prefix_suffixes ps JOIN chroma_code_suffixes s ON s.id = ps.suffix_id WHERE ps.prefix_id = ? AND s.active = 1 ORDER BY s.sort_order', [(int) $state['prefix_id']]) : [];
             if ($allowed) {
                 $steps[] = new Step('suffix', 'Add a suffix?', 'Only if this is a special version. "None" is the usual answer.', [[
-                    'name' => 'suffix_id', 'type' => 'radio', 'label' => 'Suffix', 'default' => '',
-                    'options' => array_merge([['', '(none)', 'A plain number under this prefix.']], array_map(fn($s) => [(int) $s['id'], $s['code'], $s['label']], $allowed)),
+                    'name' => 'suffix_id', 'type' => 'radio', 'label' => 'Suffix', 'default' => '', 'tip' => Tips::SUFFIX,
+                    'options' => array_merge([['', '(none)', 'Just the number, no suffix.']], array_map(fn($s) => [(int) $s['id'], $s['code'], $s['label']], $allowed)),
                 ]]);
             }
         }
@@ -128,6 +150,46 @@ final class AssignItemCodeWizard extends Wizard
             ]]);
         }
         return $steps;
+    }
+
+    /** Everyday prefixes and the inherited/legacy ones, for the shared prefix screen. @return array{everyday:list<array<string,mixed>>,other:list<array<string,mixed>>} */
+    public function prefixGroups(): array
+    {
+        $out = ['everyday' => [], 'other' => []];
+        $quick = new QuickAssign($this->app->db, new CodeAssigner($this->app->db, $this->app->audit));
+        foreach ($quick->prefixChoices() as $p) {
+            $out[in_array((string) $p['tag'], ['inherited', 'legacy'], true) ? 'other' : 'everyday'][] = $p;
+        }
+        return $out;
+    }
+
+    /** Colour words that name a prefix, so "Pantone 300 blue" starts on B. */
+    private const COLOUR_PREFIXES = [
+        'yellow' => 'Y', 'red' => 'R', 'blue' => 'B', 'black' => 'BK', 'green' => 'G', 'purple' => 'P', 'violet' => 'P',
+        'brown' => 'BN', 'orange' => 'OR', 'white' => 'W', 'gray' => 'GY', 'grey' => 'GY',
+    ];
+
+    /** The colour shown above the prefix cards, and the prefix to start on: the project's default, else one named by a colour word in the description. @return array{default:?int,context:?array{label:string,description:string,note:string}} */
+    public function prefixScreen(array $state): array
+    {
+        $item = $this->item($state);
+        $default = (int) ($item['project']['default_prefix_id'] ?? 0) ?: null;
+        $note = 'The project\'s usual prefix is picked for you; change it if this one is different.';
+        if ($default === null && preg_match('/\b(' . implode('|', array_keys(self::COLOUR_PREFIXES)) . ')\b/i', (string) $item['description'], $m)) {
+            $code = self::COLOUR_PREFIXES[strtolower($m[1])];
+            foreach ($this->prefixGroups()['everyday'] as $p) {
+                if ($p['code'] === $code) {
+                    $default = $p['id'];
+                    $note = 'Picked from the word "' . $m[1] . '" in the description; change it if that is not right.';
+                }
+            }
+        }
+        $label = (string) ($item['description'] ?? '');
+        $pantone = (string) ($item['pantone'] ?? '');
+        return [
+            'default' => $default,
+            'context' => ['label' => 'Project ' . $item['project_number'], 'description' => $label . ($pantone !== '' && !str_contains(mb_strtolower($label), mb_strtolower($pantone)) ? ' · Pantone ' . $pantone : ''), 'note' => $note],
+        ];
     }
 
     public function review(array $state): array
