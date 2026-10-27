@@ -1,0 +1,35 @@
+#!/usr/bin/env php
+<?php
+/**
+ * Nightly customer sync from the Mar-Kov CMS (run by a systemd timer or cron).
+ *   bin/cms-sync            sync if the connection is enabled; exit 0 quietly when it is off
+ *   bin/cms-sync --verbose  print the result
+ * Exit codes: 0 ok or disabled, 1 the sync failed.
+ */
+declare(strict_types=1);
+require __DIR__ . '/../vendor/autoload.php';
+
+use Chroma\Core\App;
+use Chroma\Domain\Cms\CmsConnection;
+use Chroma\Domain\Cms\CustomerSync;
+
+$app = App::boot(dirname(__DIR__));
+$verbose = in_array('--verbose', array_slice($argv, 1), true);
+$cms = new CmsConnection($app->config, $app->settings);
+if (!$cms->isEnabled()) {
+    if ($verbose) {
+        echo "CMS connection is off; nothing to do.\n";
+    }
+    exit(0);
+}
+$result = (new CustomerSync($app->db, $app->settings, $app->audit))->run($cms, null, 'nightly');
+if ($result['status'] !== 'ok') {
+    fwrite(STDERR, 'CMS sync failed: ' . $result['message'] . "\n");
+    $app->log->error('cms-sync: ' . $result['message']);
+    exit(1);
+}
+$app->log->info('cms-sync: ' . $result['message']);
+if ($verbose) {
+    echo $result['message'] . "\n";
+}
+exit(0);
